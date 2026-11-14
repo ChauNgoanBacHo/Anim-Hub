@@ -173,24 +173,20 @@ function scanLocalCatalog(rootPath) {
   return { rootPath, rootName, tabs };
 }
 
-function namingSuggestion(name, keepExtension = false) {
+function namingSuggestion(name, keepExtension = false, animation = false) {
   const extension = keepExtension ? path.extname(name) : "";
   const stem = extension ? name.slice(0, -extension.length) : name;
   const clean = stem
     .trim()
-    .replace(/[^A-Za-z0-9_]+/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_|_$/g, "");
-  return `${clean}${extension.toLowerCase()}`;
+    .replace(/\s+/g, "");
+  return `${animation ? clean.replace(/\+/g, "_plus").replace(/-/g, "_minus").replace(/^_+/, "") : clean}${extension}`;
 }
 
-function namingReasons(name) {
+function namingReasons(name, animation = false) {
   const reasons = [];
   if (name !== name.trim()) reasons.push("Dư khoảng trắng đầu/cuối");
   if (/\s/.test(name)) reasons.push("Có khoảng trắng");
-  if (/[+-]/.test(name)) reasons.push("Có ký tự + hoặc -");
-  if (/[^A-Za-z0-9_.+\-\s]/.test(name)) reasons.push("Có ký tự đặc biệt");
-  if (/__+/.test(name)) reasons.push("Có underscore liên tiếp");
+  if (animation && /^[^\p{L}\p{N}_\s]/u.test(name)) reasons.push("Tên animation bắt đầu bằng ký tự đặc biệt, không tương thích config");
   return reasons;
 }
 
@@ -198,17 +194,18 @@ function scanNamingIssues(sourceDir) {
   const issues = [];
   const visit = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (/\.meta$/i.test(entry.name.trim())) continue;
       const fullPath = path.join(dir, entry.name);
       const reasons = namingReasons(entry.name);
-      if (reasons.length) issues.push({ type: entry.isDirectory() ? "Folder" : "File", name: entry.name, relativePath: path.relative(sourceDir, fullPath), reasons, suggestion: namingSuggestion(entry.name, entry.isFile()) });
+      if (reasons.length) issues.push({ type: entry.isDirectory() ? "Folder" : "File", name: entry.name, relativePath: path.relative(sourceDir, fullPath), reasons, folderPath: entry.isDirectory() ? fullPath : dir });
       if (entry.isDirectory()) visit(fullPath);
       if (entry.isFile() && entry.name.toLowerCase().endsWith(".json")) {
         try {
           const data = JSON.parse(fs.readFileSync(fullPath, "utf8"));
           if (!data?.skeleton || !data?.animations) continue;
           for (const animation of Object.keys(data.animations)) {
-            const animationReasons = namingReasons(animation);
-            if (animationReasons.length) issues.push({ type: "Animation", name: animation, relativePath: `${path.relative(sourceDir, fullPath)} → ${animation}`, reasons: animationReasons, suggestion: namingSuggestion(animation) });
+            const animationReasons = namingReasons(animation, true);
+            if (animationReasons.length) issues.push({ type: "Animation", name: animation, relativePath: `${path.relative(sourceDir, fullPath)} → ${animation}`, reasons: animationReasons, folderPath: dir });
           }
         } catch { /* Ignore non-Spine or invalid JSON here. */ }
       }

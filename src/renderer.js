@@ -385,7 +385,7 @@ async function encodeWithinSize({
 }
 
 function appNav() {
-  return `<div class="feature-topbar"><button class="feature-back" data-do="back-home">← Back to Features</button><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login for Google Sheets" : "OAuth chưa cấu hình"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></div>`;
+  return `<div class="feature-topbar"><button class="feature-back" data-do="back-home">← Về Xóm</button><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login for Google Sheets" : "OAuth chưa cấu hình"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></div>`;
 }
 
 app.addEventListener("click", async (event) => {
@@ -421,9 +421,9 @@ function renderHome() {
     ["catalog", "01", "Tạo Sheet", "Scan Animation và UI_EN trên máy, dựng cấu trúc tab closure."],
     ["export", "02", "Tạo GIF", "Preview, trim và batch export Spine animation."],
     ["upload", "03", "Upload GIF", "Load Sheet, drag GIF vào từng row và upload."],
-    ["naming", "04", "Naming Check", "Kiểm tra folder, file và animation name trước handoff."],
+    ["naming", "04", "Cảnh sát chính tả", "Kiểm tra folder, file và animation name trước handoff."],
   ];
-app.innerHTML = `<main class="feature-home"><header><div class="app-logo"><b>葉</b><div><strong>Xóm Nhà Lá</strong><span>Bộ đồ nghề của cả xóm</span></div></div><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login để dùng Google Sheets" : "Build chưa có OAuth Client ID"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></header><section class="feature-hero"><small>NHỎ MÀ CÓ VÕ</small><h1>Chuyện gì cũng có tool.</h1></section><section class="feature-grid">${features.map(([id, number, title, description]) => `<button data-do="switch-module" data-module="${id}"><span class="feature-number">${number}</span><i class="feature-symbol" aria-hidden="true">${({ catalog: "▦", export: "▶", upload: "↥", naming: "Aa" })[id]}</i><div><h2>${title}</h2><p>${description}</p></div><b class="feature-enter">Mở tool ↗</b></button>`).join("")}</section></main>`;
+app.innerHTML = `<main class="feature-home"><header><div class="app-logo"><b class="village-logo" aria-label="Logo Xóm Nhà Lá"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 25 24 12l16 13" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 25v14h22V25M22 39V29h7v10" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/><path d="M25 13C25 4 33 3 40 5c0 8-5 13-13 10" fill="currentColor"/><path d="m27 13 8-5" fill="none" stroke="#c4df9b" stroke-width="1.8" stroke-linecap="round"/></svg></b><div><strong>Xóm Nhà Lá</strong><span>Bộ đồ nghề của cả xóm</span></div></div><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login để dùng Google Sheets" : "Build chưa có OAuth Client ID"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></header><section class="feature-hero"><small>NHỎ MÀ CÓ VÕ</small><h1>Chuyện gì cũng có tool.</h1></section><section class="feature-grid">${features.map(([id, number, title, description]) => `<button data-do="switch-module" data-module="${id}"><span class="feature-number">${number}</span><i class="feature-symbol" aria-hidden="true">${({ catalog: "▦", export: "▶", upload: "↥", naming: "Aa" })[id]}</i><div><h2>${title}</h2><p>${description}</p></div><b class="feature-enter">Mở tool ↗</b></button>`).join("")}</section><footer class="app-credit">Powered by TiTi</footer></main>`;
 }
 
 function pageNotice() {
@@ -455,7 +455,8 @@ function renderUpload() {
 
 function renderNaming() {
   const n = state.naming;
-  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Naming Check</h1><p>Bắt khoảng trắng, ký tự + -, ký tự đặc biệt trong folder, file và animation name.</p></div><button class="primary-action" data-do="scan-naming" ${!n.folder || n.scanning ? "disabled" : ""}>${n.scanning ? "Checking…" : "Run Check"}</button></header><section class="naming-source"><label><span>Local asset folder</span><div><input data-naming-folder value="${esc(n.folder)}" placeholder="Chọn folder asset cần kiểm tra..."><button data-do="pick-naming-folder">Browse</button></div></label></section>${n.error ? `<div class="notice error">${esc(n.error)}</div>` : ""}<section class="naming-results">${n.issues.length ? `<div class="naming-head"><span>Type</span><span>Current name / path</span><span>Issues</span><span>Suggestion</span></div>${n.issues.map((issue) => `<div class="naming-row"><b>${esc(issue.type)}</b><div><strong>${esc(issue.name)}</strong><small>${esc(issue.relativePath)}</small></div><span>${issue.reasons.map(esc).join(" · ")}</span><code>${esc(issue.suggestion)}</code></div>`).join("")}` : `<div class="module-empty"><b>${n.folder ? "Chưa phát hiện naming issue" : "Chọn folder để kiểm tra"}</b><span>Tool không tự rename; chỉ report để team sửa an toàn.</span></div>`}</section></main>`;
+  n.issues = n.issues.filter((issue) => issue.type === "Animation" || !/\.meta$/i.test(String(issue.name || "").trim()));
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Cảnh sát chính tả</h1><p>Kiểm tra khoảng trắng dư trong tên asset và ký tự đặc biệt ở đầu tên animation.</p></div><button class="primary-action" data-do="scan-naming" ${!n.folder || n.scanning ? "disabled" : ""}>${n.scanning ? "Checking…" : "Run Check"}</button></header><section class="naming-source"><label><span>Local asset folder</span><div><input data-naming-folder value="${esc(n.folder)}" placeholder="Chọn folder asset cần kiểm tra..."><button data-do="pick-naming-folder">Browse</button></div></label></section>${n.error ? `<div class="notice error">${esc(n.error)}</div>` : ""}<section class="naming-results">${n.issues.length ? `<div class="naming-head"><span>Type</span><span>Current name / path</span><span>Issues</span><span>Open</span></div>${n.issues.map((issue) => `<div class="naming-row"><b>${esc(issue.type)}</b><div><strong>${esc(issue.name)}</strong><small>${esc(issue.relativePath)}</small></div><span>${issue.reasons.map(esc).join(" · ")}</span><button class="naming-open" data-do="open-naming-folder" data-folder="${esc(issue.folderPath)}">Open ↗</button></div>`).join("")}` : `<div class="module-empty"><b>${n.folder ? "Chưa phát hiện naming issue" : "Chọn folder để kiểm tra"}</b><span>Tool không tự rename; chỉ report để team sửa an toàn.</span></div>`}</section></main>`;
 }
 
 function renderExporter() {
@@ -936,7 +937,15 @@ app.addEventListener("click", async (e) => {
     return;
   }
   const a = b.dataset.do;
-  if (a === "switch-module") {
+  if (a === "open-naming-folder") {
+    if (!b.dataset.folder || b.dataset.folder === "undefined") {
+      state.naming.error = "Danh sách cũ chưa có đường dẫn Open. Chạy lại Run Check để cập nhật.";
+      render();
+      return;
+    }
+    const result = await window.spinePreview.openFolder(b.dataset.folder);
+    if (!result?.ok) { state.naming.error = result?.error || "Không mở được folder."; render(); }
+  } else if (a === "switch-module") {
     if (state.module === "export") destroyStage();
     state.module = b.dataset.module;
     render();
@@ -1073,7 +1082,7 @@ app.addEventListener("click", async (e) => {
     const n = state.naming;
     n.scanning = true; n.error = ""; render();
     const result = await window.spinePreview.scanNamingIssues(n.folder);
-    n.scanning = false; n.issues = result?.issues || []; n.error = result?.error || ""; render();
+    n.scanning = false; n.issues = (result?.issues || []).filter((issue) => issue.type === "Animation" || !/\.meta$/i.test(String(issue.name || "").trim())); n.error = result?.error || ""; render();
   } else if (a === "source") {
     const v = await window.spinePreview.selectFolder();
     if (v) {

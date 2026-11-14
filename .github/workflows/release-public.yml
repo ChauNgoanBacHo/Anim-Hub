@@ -90,7 +90,7 @@ jobs:
             throw "Could not find packaged Windows app directory under ./out"
           }
 
-          $zipName = "Spine-GIF-Expoter-portable-$releaseTag.zip"
+          $zipName = "Xom-Nha-La-portable-$releaseTag.zip"
           $zipPath = Join-Path $portableDir $zipName
 
           if (Test-Path $zipPath) {
@@ -104,7 +104,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: spine-gif-expoter-windows-release
+          name: xom-nha-la-windows-release
           path: |
             out/make/portable/*.zip
           if-no-files-found: error

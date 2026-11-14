@@ -107,6 +107,7 @@ jobs:
           name: xom-nha-la-windows-release
           path: |
             out/make/portable/*.zip
+            out/make/**/*.exe
           if-no-files-found: error
           retention-days: 7
 
@@ -117,6 +118,7 @@ jobs:
           generate_release_notes: true
           files: |
             out/make/portable/*.zip
+            out/make/**/*.exe
           fail_on_unmatched_files: true
 
       - name: Publish download links
@@ -129,7 +131,8 @@ jobs:
             echo "## Public Release Download"
             echo
             echo "- Release page: ${RELEASE_URL}"
-            echo "- Recommended asset: portable zip"
+            echo "- Windows installer: https://github.com/${{ github.repository }}/releases/latest/download/XomNhaLaSetup.exe"
+            echo "- Portable ZIP is also available below."
           } >> "$GITHUB_STEP_SUMMARY"
 
           find out/make/portable -name '*.zip' | while read -r asset_path; do

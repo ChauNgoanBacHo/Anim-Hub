@@ -15,6 +15,9 @@
     "Segoe UI",
     sans-serif;
 }
+@font-face { font-family: Baloo; src: url('../assets/fonts/baloo2-bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+html,body,button,input,select,textarea { font-family: Baloo, system-ui, sans-serif; }
+.feature-home .app-logo strong,.feature-home .feature-hero h1,.feature-category-title h2,.feature-columns .feature-grid h2 { font-family: Baloo, system-ui, sans-serif; font-weight: 700; letter-spacing: 0; }
 * {
   box-sizing: border-box;
 }

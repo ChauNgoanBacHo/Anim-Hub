@@ -1301,6 +1301,12 @@ button[data-do="notes-scan"] { background: #67cbbb; border-color: #67cbbb; color
 .notes-new-game-heading p { margin: 0; color: #abb3c0; font-size: 13px; line-height: 1.6; }
 .notes-new-game label > span { margin-bottom: 14px; }
 
+.mascot-logo { width: 52px; height: 52px; object-fit: contain; }
+
+.feature-login-notice { margin: 24px 5vw; padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border: 1px solid #617c83; border-left: 4px solid #8bd6d0; border-radius: 12px; background: #202d32; }
+.feature-login-notice strong { color: #e4f6f5; font-size: 16px; }.feature-login-notice p { margin: 7px 0 0; color: #c3d2d8; font-size: 14px; line-height: 1.6; }.feature-login-notice button { flex-shrink: 0; }
+@media(max-width:680px) { .feature-login-notice { align-items: flex-start; flex-direction: column; gap: 14px; } }
+
 /* The neighborhood toolbox: readable type and four distinct doorways. */
 .feature-hero small { color: #c4df9b; font-size: 12px; letter-spacing: .2em; }
 .feature-hero h1 { font-size: clamp(32px, 3.5vw, 52px); letter-spacing: -.035em; line-height: 1.2; margin: 12px 0 0; color: #f1f2e9; }

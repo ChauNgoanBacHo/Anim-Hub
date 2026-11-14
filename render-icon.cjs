@@ -1,10 +1,8 @@
-const {app,BrowserWindow}=require('electron');
+const {app,nativeImage}=require('electron');
 const fs=require('node:fs');
 const path=require('node:path');
 app.whenReady().then(async()=>{
- const win=new BrowserWindow({show:false,width:1024,height:1024,useContentSize:true,transparent:true,webPreferences:{offscreen:true}});
- await win.loadURL('data:text/html;charset=utf-8,'+encodeURIComponent('<style>html,body{margin:0;width:1024px;height:1024px;background:transparent}svg{display:block}</style>'+fs.readFileSync('assets/icon.svg','utf8')));
- const image=await win.webContents.capturePage();
+ const image=nativeImage.createFromPath(path.resolve('assets/icon-mascot-transparent.png'));
  const png=image.resize({width:1024,height:1024});
  fs.writeFileSync('assets/icon.png',png.toPNG());
  const dir='assets/app.iconset';fs.mkdirSync(dir,{recursive:true});

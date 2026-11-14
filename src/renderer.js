@@ -439,7 +439,7 @@ function renderCatalog() {
   const preview = catalog
     ? `<div class="catalog-summary"><div><strong>${esc(catalog.rootName)}</strong><span>${catalog.tabs.length} tabs · ${catalog.tabs.reduce((sum, tab) => sum + tab.items.length, 0)} items</span></div>${w.busy ? `<progress max="1" value="${w.progress}"></progress>` : ""}</div><div class="catalog-tabs">${catalog.tabs.map((tab) => `<article><header><div><b>${esc(tab.title)}</b><span>${tab.source === "ui" ? "UI images" : "Animation assets"}</span></div><strong>${tab.items.length}</strong></header><ol>${tab.items.slice(0, 8).map((item) => `<li><span>${esc(item.name)}</span>${item.group ? `<small>${esc(item.group)}</small>` : ""}</li>`).join("")}${tab.items.length > 8 ? `<li class="more">+${tab.items.length - 8} more</li>` : ""}</ol></article>`).join("")}</div>`
     : `<div class="module-empty"><b>Chưa scan folder local</b><span>Chọn folder gốc chứa *_Animation và *_UI_EN rồi bấm Scan Local.</span></div>`;
-app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><small>Feature 01</small><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${workspaceSettings()}<section class="drive-source"><label><span>Local root folder</span><div><input readonly value="${esc(w.driveUrl)}" placeholder="Chọn folder data hoặc project root..."><button data-do="pick-local-root" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-local" ${!w.driveUrl || w.busy ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan Local"}</button></div></label></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
+app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${workspaceSettings()}<section class="drive-source"><label><span>Local root folder</span><div><input readonly value="${esc(w.driveUrl)}" placeholder="Chọn folder data hoặc project root..."><button data-do="pick-local-root" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-local" ${!w.driveUrl || w.busy ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan Local"}</button></div></label></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
 }
 
 function renderUpload() {
@@ -448,21 +448,21 @@ function renderUpload() {
   const selectedCount = w.uploadRows.filter((row) => row.file).length;
   const canUpload = selectedCount && state.google.signedIn && w.sheetUrl && !w.busy;
   const rows = w.uploadRows.length
-    ? `<div class="upload-head"><span>#</span><span>Animation item</span><span>GIF file</span></div>${w.uploadRows.map((row, index) => `<div class="upload-row ${row.status || ""}" data-upload-index="${index}"><span>${esc(row.index)}</span><div><b>${esc(row.name)}</b><small>Row ${row.rowNumber} · Preview C${row.rowNumber}</small></div><button class="file-drop" data-do="pick-upload-file"><input type="file" accept="image/gif" data-upload-file="${index}"><strong>${row.file ? esc(row.file.name) : "Drop GIF or choose file"}</strong><span>${row.status === "done" ? "Uploaded" : row.status === "uploading" ? "Queued / uploading…" : row.status === "failed" ? "Failed" : row.file ? `${Math.round(row.file.size / 1024)} KB` : "GIF only"}</span></button></div>`).join("")}`
+    ? `<div class="upload-head"><span>#</span><span>Animation item</span><span>GIF file</span></div>${w.uploadRows.map((row, index) => `<div class="upload-row ${row.status || ""}" data-upload-index="${index}"><span>${esc(row.index)}</span><div><b>${esc(row.name)}</b><small>${esc(row.sheetName || sheet.selected)} · Row ${row.rowNumber} · Preview C${row.rowNumber}</small></div><button class="file-drop ${row.file ? "has-file" : ""}" data-do="pick-upload-file"><input type="file" accept="image/gif" data-upload-file="${index}"><strong>${row.file ? esc(row.file.name) : "Drop GIF or choose file"}</strong><span>${row.status === "done" ? "Uploaded" : row.status === "uploading" ? "Queued / uploading…" : row.status === "failed" ? "Failed" : row.file ? `✓ Đã chọn GIF · ${Math.round(row.file.size / 1024)} KB · Bấm để đổi` : "GIF only"}</span></button></div>`).join("")}`
     : `<div class="module-empty"><b>Chưa có animation rows</b><span>Closure Sheet được cấu hình sẵn trong bản build; bấm Load Sheet để bắt đầu.</span></div>`;
-  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><small>Feature 03</small><h1>Upload GIF</h1><p>Load animation rows, gắn GIF và upload qua queue tự động.</p></div><button class="primary-action" data-do="upload-all" ${canUpload ? "" : "disabled"}>Upload ${selectedCount || ""} GIF</button></header>${workspaceSettings()}<section class="upload-controls"><button data-do="load-sheet" ${!state.google.signedIn || !w.sheetUrl || w.busy ? "disabled" : ""}>${w.busy ? "Loading…" : "Load Sheet"}</button>${sheet ? `<label><span>Sheet tab</span><select data-role="closure-tab">${sheet.tabs.map((tab) => `<option value="${esc(tab)}" ${sheet.selected === tab ? "selected" : ""}>${esc(tab)}</option>`).join("")}</select></label><strong>${esc(sheet.title)}</strong>` : ""}</section>${pageNotice()}${w.busy ? `<div class="upload-progress"><span style="width:${Math.max(0.02, w.progress) * 100}%"></span></div>` : ""}<section class="upload-list">${rows}</section></main>`;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Upload GIF</h1><p>Load animation rows, gắn GIF và upload qua queue tự động.</p></div><button class="primary-action" data-do="upload-all" ${canUpload ? "" : "disabled"}>Upload ${selectedCount || ""} GIF</button></header>${workspaceSettings()}<section class="upload-controls"><button data-do="load-sheet" ${!state.google.signedIn || !w.sheetUrl || w.busy ? "disabled" : ""}>${w.busy ? "Loading…" : "Load Sheet"}</button>${sheet ? `<label><span>Sheet tab</span><select data-role="closure-tab">${sheet.tabs.map((tab) => `<option value="${esc(tab)}" ${sheet.selected === tab ? "selected" : ""}>${esc(tab)}</option>`).join("")}</select></label>` : ""}</section>${sheet ? `<section class="upload-folder-controls"><label class="batch-gif-picker"><span>Folder GIF · tự map theo tên</span><input type="file" webkitdirectory directory multiple data-batch-gifs ${w.busy ? "disabled" : ""}></label></section>` : ""}${pageNotice()}${w.busy ? `<div class="upload-progress"><span style="width:${Math.max(0.02, w.progress) * 100}%"></span></div>` : ""}<section class="upload-list">${rows}</section></main>`;
 }
 
 function renderNaming() {
   const n = state.naming;
-  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><small>Feature 04</small><h1>Naming Check</h1><p>Bắt khoảng trắng, ký tự + -, ký tự đặc biệt trong folder, file và animation name.</p></div><button class="primary-action" data-do="scan-naming" ${!n.folder || n.scanning ? "disabled" : ""}>${n.scanning ? "Checking…" : "Run Check"}</button></header><section class="naming-source"><label><span>Local asset folder</span><div><input data-naming-folder value="${esc(n.folder)}" placeholder="Chọn folder asset cần kiểm tra..."><button data-do="pick-naming-folder">Browse</button></div></label></section>${n.error ? `<div class="notice error">${esc(n.error)}</div>` : ""}<section class="naming-results">${n.issues.length ? `<div class="naming-head"><span>Type</span><span>Current name / path</span><span>Issues</span><span>Suggestion</span></div>${n.issues.map((issue) => `<div class="naming-row"><b>${esc(issue.type)}</b><div><strong>${esc(issue.name)}</strong><small>${esc(issue.relativePath)}</small></div><span>${issue.reasons.map(esc).join(" · ")}</span><code>${esc(issue.suggestion)}</code></div>`).join("")}` : `<div class="module-empty"><b>${n.folder ? "Chưa phát hiện naming issue" : "Chọn folder để kiểm tra"}</b><span>Tool không tự rename; chỉ report để team sửa an toàn.</span></div>`}</section></main>`;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Naming Check</h1><p>Bắt khoảng trắng, ký tự + -, ký tự đặc biệt trong folder, file và animation name.</p></div><button class="primary-action" data-do="scan-naming" ${!n.folder || n.scanning ? "disabled" : ""}>${n.scanning ? "Checking…" : "Run Check"}</button></header><section class="naming-source"><label><span>Local asset folder</span><div><input data-naming-folder value="${esc(n.folder)}" placeholder="Chọn folder asset cần kiểm tra..."><button data-do="pick-naming-folder">Browse</button></div></label></section>${n.error ? `<div class="notice error">${esc(n.error)}</div>` : ""}<section class="naming-results">${n.issues.length ? `<div class="naming-head"><span>Type</span><span>Current name / path</span><span>Issues</span><span>Suggestion</span></div>${n.issues.map((issue) => `<div class="naming-row"><b>${esc(issue.type)}</b><div><strong>${esc(issue.name)}</strong><small>${esc(issue.relativePath)}</small></div><span>${issue.reasons.map(esc).join(" · ")}</span><code>${esc(issue.suggestion)}</code></div>`).join("")}` : `<div class="module-empty"><b>${n.folder ? "Chưa phát hiện naming issue" : "Chọn folder để kiểm tra"}</b><span>Tool không tự rename; chỉ report để team sửa an toàn.</span></div>`}</section></main>`;
 }
 
 function renderExporter() {
   const count = selected().length,
     total = state.files.reduce((n, f) => n + f.animations.length, 0),
     visible = visibleFiles();
-  app.innerHTML = `${appNav()}<main class="exporter-page"><header class="module-header"><div><small>Feature 02</small><h1>Tạo GIF</h1><p>Chọn animation, chỉnh timeframe và xuất GIF cho closure.</p></div><div class="stats"><span><strong>${state.files.length}</strong> Spine</span><span><strong>${total}</strong> anim</span><span><strong>${count}</strong> selected</span></div></header>
+  app.innerHTML = `${appNav()}<main class="exporter-page"><header class="module-header"><div><h1>Tạo GIF</h1><p>Chọn animation, chỉnh timeframe và xuất GIF cho closure.</p></div><div class="stats"><span><strong>${state.files.length}</strong> Spine</span><span><strong>${total}</strong> anim</span><span><strong>${count}</strong> selected</span></div></header>
   <section class="toolbar"><label><span>Source folder</span><div><input data-source value="${esc(state.source)}" placeholder="Folder chứa Spine..."><button data-do="source">${icon("folder")}</button></div></label><button class="scan" data-do="scan" ${state.scanning ? "disabled" : ""}>${state.scanning ? "Scanning…" : "Scan Spine"}</button><i></i><label><span>GIF output</span><div><input data-output value="${esc(state.output)}" placeholder="Folder lưu GIF..."><button data-do="output">${icon("folder")}</button></div></label></section>
   ${state.error ? `<div class="notice error">${esc(state.error)}</div>` : ""}${state.status ? `<div class="notice ok">${esc(state.status)}</div>` : ""}
   <section class="batch-tools"><label><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input data-search value="${esc(state.search)}" placeholder="Search Spine hoặc animation..."></label><button class="clear-search ${state.search ? "" : "hidden"}" data-do="clear-search">Clear</button><span></span><button class="check-first" data-do="check-first" ${state.files.length ? "" : "disabled"}>Check first <b>${state.files.filter((file) => file.animations.length).length}</b></button><button class="uncheck-all" data-do="uncheck-all" ${count ? "" : "disabled"}>Uncheck all <b>${count || ""}</b></button></section>
@@ -747,7 +747,7 @@ async function encode(x, n, total) {
       },
     });
     return {
-      fileName: `${clean(x.file.fileName)}_${clean(x.animation)}.gif`,
+      fileName: `${clean(x.file.fileName)}.gif`,
       dataBase64: bytesToBase64(encoded.bytes),
     };
   } finally {
@@ -887,8 +887,14 @@ async function exportAll() {
     if (state.combineSymbols) {
       files.push(await encodeCombined(list));
     } else {
-      for (let i = 0; i < list.length; i++)
-        files.push(await encode(list[i], i, list.length));
+      const names = new Map();
+      for (let i = 0; i < list.length; i++) {
+        const file = await encode(list[i], i, list.length);
+        const count = (names.get(file.fileName) || 0) + 1;
+        names.set(file.fileName, count);
+        if (count > 1) file.fileName = file.fileName.replace(/\.gif$/i, `_${count}.gif`);
+        files.push(file);
+      }
     }
     if (state.optimizeGif) {
       for (let index = 0; index < files.length; index += 1) {
@@ -1043,7 +1049,7 @@ app.addEventListener("click", async (e) => {
       for (let index = 0; index < queue.length; index += 1) {
         const row = queue[index];
         row.status = "ready";
-        images.push({ sheetName: w.sheet.selected, cell: `C${row.rowNumber}`, fileName: row.file.name, mimeType: row.file.type || "image/gif", dataBase64: await fileToBase64(row.file) });
+        images.push({ sheetName: row.sheetName || w.sheet.selected, cell: `C${row.rowNumber}`, fileName: row.file.name, mimeType: row.file.type || "image/gif", dataBase64: await fileToBase64(row.file) });
         w.progress = ((index + 1) / queue.length) * 0.1;
         render();
       }
@@ -1150,6 +1156,27 @@ app.addEventListener("input", (e) => {
 app.addEventListener("change", (e) => {
   const t = e.target,
     row = t.closest(".anim");
+  if (t.matches("[data-batch-gifs]")) {
+    const normalize = (name) => clean(String(name).replace(/\.(gif|json|skel|png)$/i, "")).toLowerCase();
+    const selectedFiles = Array.from(t.files || []).filter((file) => /\.gif$/i.test(file.name));
+    const files = new Map();
+    const duplicates = new Set();
+    selectedFiles.forEach((file) => {
+      const key = normalize(file.name);
+      if (files.has(key)) duplicates.add(key);
+      else files.set(key, file);
+    });
+    let matched = 0;
+    state.workspace.uploadRows.forEach((item) => {
+      const key = normalize(item.name);
+      const file = duplicates.has(key) ? null : files.get(key);
+      if (file) { item.file = file; item.status = "ready"; matched += 1; }
+    });
+    const folder = t.files?.[0]?.webkitRelativePath?.split("/")[0] || "folder";
+    state.workspace.message = `${folder} · tìm thấy ${selectedFiles.length} GIF · đã map ${matched} hàng.${duplicates.size ? ` Bỏ qua ${duplicates.size} tên file trùng trong folder.` : ""} Các hàng không khớp giữ nguyên.`;
+    render();
+    return;
+  }
   if (t.dataset.role === "closure-tab") {
     state.workspace.sheet.selected = t.value;
     window.spinePreview.loadClosureSheet(state.workspace.sheetUrl, t.value).then((result) => {

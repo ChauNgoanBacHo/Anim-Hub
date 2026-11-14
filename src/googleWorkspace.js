@@ -198,11 +198,17 @@ async function loadSheet(sheetUrl, tabTitle = "") {
   const token = await accessToken();
   const metadata = await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title,sheets.properties`, { headers: { Authorization: `Bearer ${token}` } });
   const tabs = (metadata.sheets || []).map((sheet) => sheet.properties.title).filter((title) => title !== QUEUE_SHEET);
-  const selected = tabTitle && tabs.includes(tabTitle) ? tabTitle : tabs.find((title) => /spine|symbol/i.test(title)) || tabs[0] || "";
+  const animationTabs = tabs.filter((title) => /(?:^|_)Spine$|(?:^|_)Symbols?$/i.test(title));
+  if (animationTabs.length) tabs.unshift("All animations");
+  const selected = tabTitle && tabs.includes(tabTitle) ? tabTitle : tabs[0] || "";
   let rows = [];
   if (selected) {
-    const data = await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`${quoted(selected)}!A:C`)}`, { headers: { Authorization: `Bearer ${token}` } });
-    rows = (data.values || []).slice(1).map((row, index) => ({ rowNumber: index + 2, index: row[0] || index + 1, name: row[1] || "", preview: row[2] || "" })).filter((row) => row.name);
+    const sources = selected === "All animations" ? animationTabs : [selected];
+    const groups = await Promise.all(sources.map(async (sheetName) => {
+      const data = await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`${quoted(sheetName)}!A:C`)}`, { headers: { Authorization: `Bearer ${token}` } });
+      return (data.values || []).slice(1).map((row, index) => ({ sheetName, rowNumber: index + 2, index: row[0] || index + 1, name: row[1] || "", preview: row[2] || "" })).filter((row) => row.name);
+    }));
+    rows = groups.flat();
   }
   return { spreadsheetId, title: metadata.properties?.title || "Closure Sheet", tabs, selected, rows };
 }

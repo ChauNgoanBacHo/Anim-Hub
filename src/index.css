@@ -1041,9 +1041,11 @@ footer {
 .catalog-tabs ol { padding: 14px 20px 20px 40px; }.catalog-tabs li { font-size: 14px; padding-block: 7px; color: #d2d9cf; overflow-wrap: anywhere; }.catalog-tabs li small { color: #a3b09d; font-size: 12px; }.catalog-tabs .more { color: #c4df9b; }
 .module-empty { border-color: #ffffff26; background: #ffffff03; padding: 28px; }.module-empty b { font-size: 20px; color: #dce6d5; }.module-empty span { font-size: 14px; color: #a7b2a7; line-height: 1.7; }
 .upload-controls > strong { font-size: 16px; }.upload-head,.naming-head { font-size: 12px; color: #aab7a5; padding-block: 14px; }
+.batch-gif-picker input { display: block; max-width: 320px; height: 46px; padding: 5px; color: #bdc4cf; font-size: 13px; }
+.batch-gif-picker input::file-selector-button { height: 34px; margin-right: 10px; padding: 0 14px; border: 1px solid #50545e; border-radius: 8px; background: #30333a; color: #e2e5ec; cursor: pointer; }
 .upload-row,.naming-row { min-height: 88px; background: #1d251d; border-color: #ffffff18; border-radius: 14px; padding: 14px 18px; margin-bottom: 10px; }
 .upload-row > span { font-size: 14px; color: #c4df9b; }.upload-row b,.naming-row strong { font-size: 15px; }.upload-row small,.naming-row small { font-size: 12px; color: #a5b09f; overflow-wrap: anywhere; }
-.file-drop { height: 62px; background: #141b14; border-color: #829e70; border-radius: 10px; }.file-drop strong { font-size: 14px; color: #d7e5cf; }.file-drop span { font-size: 12px; color: #a3b09c; }.file-drop.dragging { background: #2b3b25; border-color: #c4df9b; }
+.file-drop { height: 88px; background: #141b14; border-color: #829e70; border-radius: 10px; }.file-drop strong { font-size: 14px; color: #d7e5cf; }.file-drop span { font-size: 12px; color: #a3b09c; }.file-drop.dragging { background: #2b3b25; border-color: #c4df9b; }
 .naming-row > b,.naming-row > span,.naming-row code { font-size: 13px; overflow-wrap: anywhere; }.naming-row > b { color: #efc393; }.naming-row code { color: #c4df9b; }
 .exporter-page > header { background: #171d17f5; box-shadow: none; }.exporter-page .brand h1 { font-size: 22px; }.exporter-page .brand p { font-size: 13px; color: #a7b2a7; }
 .exporter-page .toolbar,.exporter-page .batch-tools { background: #171d17; border-color: #ffffff18; }.exporter-page .toolbar label > span,.exporter-page .export-option > span { font-size: 12px; color: #b7c2b1; }
@@ -1111,6 +1113,28 @@ footer {
 .closure-sheet-link { display: inline-block; max-width: 100%; color: #82d8ff; font-size: 15px; line-height: 1.7; text-decoration: underline; text-underline-offset: 4px; overflow-wrap: anywhere; }
 .closure-sheet-link:hover { color: #c3eeff; }.closure-sheet-link:focus-visible { outline: 2px solid #82d8ff; outline-offset: 5px; border-radius: 3px; }
 .sheet-link-field p { color: #a5a8b0; font-size: 14px; }
+
+.upload-row.ready { border-color: #466478; }
+.file-drop.has-file { background: #1b3443; border: 1px solid #62c5ee; box-shadow: inset 4px 0 #62c5ee; padding-left: 18px; }
+.file-drop.has-file strong { color: #ecf9ff; }
+.file-drop.has-file span { color: #9ee2ff; font-weight: 600; }
+.upload-row.done .file-drop.has-file { background: #20372f; border-color: #72bd9b; box-shadow: inset 4px 0 #72bd9b; }
+.upload-row.done .file-drop.has-file span { color: #a9e1c4; }
+.upload-row.failed .file-drop.has-file { background: #39252b; border-color: #e19ba9; box-shadow: inset 4px 0 #e19ba9; }
+.upload-row.failed .file-drop.has-file span { color: #f3b7c2; }
+
+.upload-folder-controls { margin: 20px 5vw; padding: 20px 22px; background: #202226; border: 1px solid #383b42; border-radius: 16px; }
+.upload-folder-controls .batch-gif-picker { display: block; }
+.upload-folder-controls .batch-gif-picker > span { display: block; margin-bottom: 10px; font-size: 12px; font-weight: 700; color: #b9bdc7; }
+.upload-folder-controls .batch-gif-picker input { width: 100%; max-width: none; }
+
+.exporter-page > .notice { margin: 12px 5vw; }
+
+.exporter-page .file h2 { font-size: 17px; line-height: 1.45; }
+@media (min-width: 1101px) {
+  .exporter-page .group,.exporter-page .headrow { grid-template-columns: 310px minmax(0, 1fr); }
+  .exporter-page .anim { grid-template-columns: 28px minmax(150px, .42fr) 130px minmax(190px, 1fr) 82px; }
+}
 
 /* The neighborhood toolbox: readable type and four distinct doorways. */
 .feature-hero small { color: #c4df9b; font-size: 12px; letter-spacing: .2em; }

@@ -3,12 +3,16 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  net,
   protocol,
   screen,
   shell,
 } from "electron";
 import fs from "node:fs";
 import path from "node:path";
+import http from "node:http";
+import crypto from "node:crypto";
+import { pathToFileURL } from "node:url";
 import started from "electron-squirrel-startup";
 import { registerGoogleWorkspaceHandlers } from "./googleWorkspace.js";
 
@@ -18,6 +22,26 @@ if (started) {
 }
 
 const SPINE_ASSET_SCHEME = "spine-asset";
+const assetToken = crypto.randomBytes(24).toString("hex");
+let assetServer;
+let assetBaseUrl;
+async function startAssetServer() {
+  assetServer = http.createServer(async (request, response) => {
+    response.setHeader("Access-Control-Allow-Origin", "*");
+    try {
+      const url = new URL(request.url, "http://127.0.0.1");
+      if (!url.pathname.startsWith(`/${assetToken}/`)) { response.writeHead(403).end(); return; }
+      let filePath = decodeURIComponent(url.pathname.slice(assetToken.length + 1));
+      if (/^\/[A-Za-z]:\//.test(filePath)) filePath = filePath.slice(1);
+      if (![".json", ".atlas", ".txt", ".png", ".jpg", ".jpeg", ".webp"].includes(path.extname(filePath).toLowerCase())) { response.writeHead(403).end(); return; }
+      const bytes = await fs.promises.readFile(filePath);
+      response.writeHead(200, { "Content-Type": contentTypeFor(filePath), "Cache-Control": "no-store" });
+      response.end(bytes);
+    } catch (error) { response.writeHead(404).end("Asset not found"); }
+  });
+  await new Promise((resolve, reject) => { assetServer.once("error", reject); assetServer.listen(0, "127.0.0.1", resolve); });
+  assetBaseUrl = `http://127.0.0.1:${assetServer.address().port}/${assetToken}`;
+}
 
 function contentTypeFor(filePath) {
   const ext = path.extname(filePath).toLowerCase();
@@ -410,6 +434,7 @@ async function saveBatchGifs(outputDir, files) {
 }
 
 function registerIpcHandlers() {
+  ipcMain.handle("asset-base-url", () => assetBaseUrl);
   ipcMain.handle("open-sheet-link", async (_event, url) => {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:" || parsed.hostname !== "docs.google.com" || !parsed.pathname.startsWith("/spreadsheets/")) return;
@@ -513,6 +538,7 @@ function registerIpcHandlers() {
 
 function installSpineAssetProtocol() {
   protocol.handle(SPINE_ASSET_SCHEME, async (request) => {
+    console.log("[spine-asset]", request.url);
     const corsHeaders = { "Access-Control-Allow-Origin": "*" };
     try {
       const url = new URL(request.url);
@@ -524,31 +550,28 @@ function installSpineAssetProtocol() {
         filePath = filePath.slice(1);
       }
 
-      const bytes = await fs.promises.readFile(filePath);
-      const headers = {
-        ...corsHeaders,
-        "Content-Type": contentTypeFor(filePath),
-        "Cache-Control": "no-cache",
-      };
-      return new Response(new Uint8Array(bytes), {
-        status: 200,
-        headers,
+      // Electron's network stack handles local file streaming and MIME types.
+      // Pass through its response instead of constructing a Node Response body.
+      const response = await net.fetch(pathToFileURL(filePath).href);
+      return new Response(response.body, {
+        status: response.status,
+        headers: { ...corsHeaders, "Content-Type": contentTypeFor(filePath), "Cache-Control": "no-cache" },
       });
     } catch (error) {
+      console.error("[spine-asset] Failed:", request.url, error);
       return new Response("Not found", {
         status: 404,
         headers: {
           ...corsHeaders,
           "Content-Type": "text/plain; charset=utf-8",
-          "X-Spine-Asset-Error":
-            error instanceof Error ? error.message : "Unknown error",
         },
       });
     }
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await startAssetServer();
   registerIpcHandlers();
   installSpineAssetProtocol();
   createWindow();
@@ -565,3 +588,4 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+app.on("will-quit", () => assetServer?.close());

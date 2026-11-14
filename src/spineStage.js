@@ -48,12 +48,20 @@ export class SpineStage {
 
   async loadSpine({ jsonPath, atlasPath }) {
     applyAssetPreferences();
-    const jsonUrl = toAssetUrl(jsonPath);
-    const atlasUrl = toAssetUrl(atlasPath);
+    const baseUrl = await window.spinePreview.assetBaseUrl();
+    const jsonUrl = toAssetUrl(jsonPath, baseUrl);
+    const atlasUrl = toAssetUrl(atlasPath, baseUrl);
 
+    const readAsset = async (url, filePath) => {
+      try {
+        return await fetch(url);
+      } catch (error) {
+        throw new Error(`Không tải được asset: ${filePath}. Protocol đọc file local bị lỗi hoặc chưa cập nhật; hãy đóng app và chạy lại npm start. (${error.message})`);
+      }
+    };
     const [jsonResponse, atlasResponse] = await Promise.all([
-      fetch(jsonUrl),
-      fetch(atlasUrl),
+      readAsset(jsonUrl, jsonPath),
+      readAsset(atlasUrl, atlasPath),
     ]);
 
     if (!jsonResponse.ok) {

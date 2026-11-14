@@ -1,4 +1,4 @@
-export function toAssetUrl(absolutePath) {
+export function toAssetUrl(absolutePath, baseUrl = 'spine-asset://asset') {
   const normalized = absolutePath.replace(/\\/g, '/');
   const trimmed = normalized.startsWith('/') ? normalized.slice(1) : normalized;
   const segments = trimmed.split('/');
@@ -11,5 +11,5 @@ export function toAssetUrl(absolutePath) {
     })
     .join('/');
 
-  return `spine-asset://asset/${encoded}`;
+  return `${baseUrl}/${encoded}`;
 }

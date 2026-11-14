@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('spinePreview', {
+  assetBaseUrl: () => ipcRenderer.invoke('asset-base-url'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   scanFolder: (folderPath) => ipcRenderer.invoke('scan-spine-folder', folderPath),
   scanLocalCatalog: (folderPath) => ipcRenderer.invoke('scan-local-catalog', folderPath),

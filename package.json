@@ -1,0 +1,41 @@
+{
+  "name": "xom-nha-la",
+  "productName": "Xóm Nhà Lá",
+  "version": "1.0.0",
+  "description": "Xóm Nhà Lá — Chuyện gì cũng có tool. Asset catalog, Spine GIF export, closure upload and naming checks.",
+  "main": ".vite/build/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "make:win": "electron-forge make --platform=win32",
+    "make:zip": "electron-forge make --platform=darwin --targets=@electron-forge/maker-zip",
+    "publish": "electron-forge publish",
+    "lint": "echo \"No linting configured\""
+  },
+  "keywords": [],
+  "author": {
+    "name": "TiTi",
+    "email": "tien.huynh@enotion.io"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
+    "@electron-forge/plugin-fuses": "^7.11.2",
+    "@electron-forge/plugin-vite": "^7.11.2",
+    "@electron/fuses": "^1.8.0",
+    "electron": "^42.3.3",
+    "vite": "^5.4.21"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1",
+    "gifenc": "^1.0.3",
+    "gifsicle-wasm-browser": "^1.5.19",
+    "pixi-spine": "^4.0.6",
+    "pixi.js": "^7.4.3"
+  }
+}

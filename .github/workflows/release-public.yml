@@ -1,0 +1,140 @@
+name: Release Public Download
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Optional release tag (example: v1.0.0). Leave blank to use package.json version."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-public-${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Resolve release tag
+        id: release_tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+          elif [ -n "${{ inputs.tag_name }}" ]; then
+            RELEASE_TAG="${{ inputs.tag_name }}"
+          else
+            PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+            RELEASE_TAG="v${PACKAGE_VERSION}"
+          fi
+
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Using release tag: ${RELEASE_TAG}"
+
+      - if: github.event_name == 'workflow_dispatch'
+        name: Create tag if missing
+        shell: bash
+        run: |
+          RELEASE_TAG="${{ steps.release_tag.outputs.release_tag }}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Tag ${RELEASE_TAG} already exists on origin. Reusing it."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${RELEASE_TAG}"
+          git push origin "refs/tags/${RELEASE_TAG}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run make:win
+        env:
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_WORKSPACE_DOMAIN: ${{ vars.GOOGLE_WORKSPACE_DOMAIN }}
+          CLOSURE_SHEET_URL: ${{ vars.CLOSURE_SHEET_URL }}
+
+      - name: Create portable zip
+        id: portable_zip
+        shell: pwsh
+        run: |
+          $releaseTag = "${{ steps.release_tag.outputs.release_tag }}"
+          $portableDir = Join-Path $PWD "out/make/portable"
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+
+          $packagedAppDir = Get-ChildItem -Path (Join-Path $PWD "out") -Directory |
+            Where-Object { $_.Name -like "*win32*" } |
+            Sort-Object Name |
+            Select-Object -First 1
+
+          if (-not $packagedAppDir) {
+            throw "Could not find packaged Windows app directory under ./out"
+          }
+
+          $zipName = "Spine-GIF-Expoter-portable-$releaseTag.zip"
+          $zipPath = Join-Path $portableDir $zipName
+
+          if (Test-Path $zipPath) {
+            Remove-Item -Force $zipPath
+          }
+
+          Compress-Archive -Path (Join-Path $packagedAppDir.FullName '*') -DestinationPath $zipPath
+
+          "zip_name=$zipName" >> $env:GITHUB_OUTPUT
+          "zip_path=$zipPath" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spine-gif-expoter-windows-release
+          path: |
+            out/make/portable/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_tag.outputs.release_tag }}
+          generate_release_notes: true
+          files: |
+            out/make/portable/*.zip
+          fail_on_unmatched_files: true
+
+      - name: Publish download links
+        shell: bash
+        run: |
+          RELEASE_TAG="${{ steps.release_tag.outputs.release_tag }}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}"
+
+          {
+            echo "## Public Release Download"
+            echo
+            echo "- Release page: ${RELEASE_URL}"
+            echo "- Recommended asset: portable zip"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          find out/make/portable -name '*.zip' | while read -r asset_path; do
+            asset_name="$(basename "$asset_path")"
+            download_url="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/${asset_name}"
+            echo "- ${asset_name}: ${download_url}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Portable asset URL: ${download_url}"
+          done

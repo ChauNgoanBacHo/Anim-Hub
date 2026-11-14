@@ -1,0 +1,1255 @@
+import "./index.css";
+import { GIFEncoder, quantize, applyPalette } from "gifenc";
+import gifsicle from "gifsicle-wasm-browser";
+import { SpineStage } from "./spineStage.js";
+
+const FPS = 20,
+  SIZE = 512,
+  GIF_ALPHA_THRESHOLD = 96,
+  MAX_GIF_BYTES = 512 * 1024,
+  app = document.querySelector("#app");
+const OBJECT_SIZES = [50, 60, 70, 80, 90, 100];
+const GLOBAL_DURATIONS = [0.5, 1, 1.5];
+const savedObjectSize = Number(localStorage.getItem("gif-object-size"));
+const savedGlobalDuration = Number(localStorage.getItem("gif-global-duration"));
+const state = {
+  source: localStorage.getItem("gif-source") || "",
+  output: localStorage.getItem("gif-output") || "",
+  bakeChecker: localStorage.getItem("gif-bake-checker") !== "false",
+  combineSymbols: localStorage.getItem("gif-combine-symbols") === "true",
+  optimizeGif: localStorage.getItem("gif-optimize") === "true",
+  objectSize: OBJECT_SIZES.includes(savedObjectSize) ? savedObjectSize : 80,
+  cropPadding: Number(localStorage.getItem("gif-crop-padding")) || 8,
+  groupPerRow: Number(localStorage.getItem("gif-group-per-row")) || 5,
+  globalDuration: GLOBAL_DURATIONS.includes(savedGlobalDuration)
+    ? savedGlobalDuration
+    : 1,
+  files: [],
+  configs: new Map(),
+  active: "",
+  stage: null,
+  spine: null,
+  previewFrame: 0,
+  previewStartedAt: 0,
+  previewPaused: false,
+  previewPauseTime: 0,
+  scanning: false,
+  exporting: false,
+  progress: 0,
+  status: "",
+  error: "",
+  search: "",
+  module: "home",
+  google: { configured: false, signedIn: false, user: null, busy: false },
+  workspace: {
+    driveUrl: localStorage.getItem("closure-local-root") || "",
+    sheetUrl: "",
+    catalog: null,
+    sheet: null,
+    uploadRows: [],
+    busy: false,
+    progress: 0,
+    message: "",
+    error: "",
+  },
+  naming: {
+    folder: localStorage.getItem("naming-folder") || "",
+    issues: [],
+    scanning: false,
+    error: "",
+  },
+};
+const icon = (name) =>
+  name === "folder"
+    ? '<svg viewBox="0 0 24 24"><path d="M3 8h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Zm0 0V5a2 2 0 0 1 2-2h5l2 2h5"/></svg>'
+    : '<svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>';
+const esc = (v) =>
+  String(v ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+const keyOf = (f, a) => `${f.id}::${a}`;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const renderObjectSize = () => (state.objectSize === 100 ? 96 : state.objectSize);
+const fmt = (v) => `${Number(v || 0).toFixed(2)}s`;
+const durationOf = (f, a) =>
+  Math.max(
+    0,
+    Number(f.animationDetails?.find((x) => x.name === a)?.duration) || 0,
+  );
+function configOf(f, a) {
+  const k = keyOf(f, a);
+  if (!state.configs.has(k)) {
+    state.configs.set(k, {
+      selected: false,
+      skin: f.skins?.[0] || "",
+      start: 0,
+      end: state.globalDuration,
+    });
+  }
+  return state.configs.get(k);
+}
+function items() {
+  return state.files.flatMap((file) =>
+    file.animations.map((animation) => ({
+      file,
+      animation,
+      config: configOf(file, animation),
+    })),
+  );
+}
+function selected() {
+  return items().filter((x) => x.config.selected);
+}
+function visibleFiles() {
+  const query = state.search.trim().toLowerCase();
+  if (!query) return state.files;
+  return state.files
+    .map((file) => {
+      if (file.fileName.toLowerCase().includes(query)) return file;
+      return {
+        ...file,
+        animations: file.animations.filter((animation) =>
+          animation.toLowerCase().includes(query),
+        ),
+      };
+    })
+    .filter((file) => file.animations.length);
+}
+function clean(v) {
+  return String(v)
+    .replace(/\.json$/i, "")
+    .replace(/[^A-Za-z0-9_-]+/g, "_");
+}
+
+function normalizeGifAlpha(source) {
+  const pixels = new Uint8ClampedArray(source);
+  for (let index = 0; index < pixels.length; index += 4) {
+    if (pixels[index + 3] < GIF_ALPHA_THRESHOLD) {
+      pixels[index] = 0;
+      pixels[index + 1] = 0;
+      pixels[index + 2] = 0;
+      pixels[index + 3] = 0;
+    } else {
+      // GIF only supports 1-bit alpha. Converting edge pixels to opaque here
+      // prevents semi-transparent RGB values from becoming cyan palette noise.
+      pixels[index + 3] = 255;
+    }
+  }
+  return pixels;
+}
+
+function visiblePixelBounds(canvas) {
+  const { width, height } = canvas;
+  const pixels = canvas
+    .getContext("2d", { willReadFrequently: true })
+    .getImageData(0, 0, width, height).data;
+  const columns = new Uint32Array(width);
+  const rows = new Uint32Array(height);
+  let total = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (pixels[(y * width + x) * 4 + 3] < GIF_ALPHA_THRESHOLD) continue;
+      columns[x] += 1;
+      rows[y] += 1;
+      total += 1;
+    }
+  }
+  if (!total) return null;
+  const trim = Math.floor(total * 0.005);
+  const quantileEdge = (counts, reverse = false) => {
+    let discarded = 0;
+    if (reverse) {
+      for (let index = counts.length - 1; index >= 0; index -= 1) {
+        discarded += counts[index];
+        if (discarded > trim) return index;
+      }
+      return 0;
+    }
+    for (let index = 0; index < counts.length; index += 1) {
+      discarded += counts[index];
+      if (discarded > trim) return index;
+    }
+    return counts.length - 1;
+  };
+  return {
+    left: quantileEdge(columns),
+    top: quantileEdge(rows),
+    right: quantileEdge(columns, true),
+    bottom: quantileEdge(rows, true),
+  };
+}
+
+function expandCrop(bounds, padding, maxWidth, maxHeight) {
+  if (!bounds) return { x: 0, y: 0, width: maxWidth, height: maxHeight };
+  const x = Math.max(0, bounds.left - padding);
+  const y = Math.max(0, bounds.top - padding);
+  const right = Math.min(maxWidth - 1, bounds.right + padding);
+  const bottom = Math.min(maxHeight - 1, bounds.bottom + padding);
+  return { x, y, width: Math.max(1, right - x + 1), height: Math.max(1, bottom - y + 1) };
+}
+
+function framePixelsForExport(
+  frameCanvas,
+  bakeChecker,
+  width = SIZE,
+  height = SIZE,
+) {
+  if (!bakeChecker) {
+    return frameCanvas
+      .getContext("2d", { willReadFrequently: true })
+      .getImageData(0, 0, width, height).data;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  const cell = 24;
+  for (let y = 0; y < height; y += cell) {
+    for (let x = 0; x < width; x += cell) {
+      context.fillStyle =
+        (x / cell + y / cell) % 2 === 0 ? "#c8ced8" : "#8f99a8";
+      context.fillRect(x, y, cell, cell);
+    }
+  }
+  context.drawImage(frameCanvas, 0, 0);
+  return context.getImageData(0, 0, width, height).data;
+}
+
+function resizedCanvas(source, width, height) {
+  if (source.width === width && source.height === height) return source;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(source, 0, 0, width, height);
+  return canvas;
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 32768) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 32768));
+  }
+  return btoa(binary);
+}
+
+function base64ToBytes(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+async function fileToBase64(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  return bytesToBase64(bytes);
+}
+
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+function elapsedLabel(milliseconds) {
+  const seconds = Math.floor(milliseconds / 1000);
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+async function waitForUploadQueue(jobId, total, spreadsheetId) {
+  const w = state.workspace;
+  const startedAt = Date.now();
+  const timeoutMs = Math.max(20 * 60 * 1000, (Math.ceil(total / 60) + 5) * 60 * 1000);
+  let lastCompleted = -1;
+  let lastProgressAt = startedAt;
+  while (Date.now() - startedAt < timeoutMs) {
+    const result = await window.spinePreview.queueStatus(jobId, spreadsheetId);
+    if (!result?.ok) throw new Error(result?.error || "Không đọc được upload queue.");
+    const completed = result.done + result.error;
+    if (completed !== lastCompleted) {
+      lastCompleted = completed;
+      lastProgressAt = Date.now();
+    }
+    w.progress = total ? completed / total : 1;
+    const elapsed = elapsedLabel(Date.now() - startedAt);
+    const waitingForFirstCommit = completed === 0 && result.processing === 0 && Date.now() - startedAt >= 60_000;
+    const stalled = result.queued > 0 && result.processing === 0 && Date.now() - lastProgressAt >= 120_000;
+    w.message = stalled
+      ? `Upload stalled · ${completed}/${total} completed · no progress for ${elapsedLabel(Date.now() - lastProgressAt)} · check Apps Script Executions`
+      : result.processing
+      ? `Uploading images · ${completed}/${total} completed · ${result.processing} processing · ${elapsed}`
+      : waitingForFirstCommit
+        ? `Trigger is processing the first batch · ${completed}/${total} status committed · ${result.queued} queued · elapsed ${elapsed}`
+        : `Waiting for trigger (runs every minute) · ${completed}/${total} completed · ${result.queued} queued · elapsed ${elapsed}`;
+    render();
+    if (completed >= total) return result;
+    await wait(3000);
+  }
+  throw new Error(`Upload queue quá ${Math.ceil(timeoutMs / 60000)} phút chưa hoàn tất. Kiểm tra Apps Script trigger và Executions.`);
+}
+
+async function optimizeGifFile(file) {
+  const source = base64ToBytes(file.dataBase64);
+  try {
+    const output = await gifsicle.run({
+      input: [{ file: source.buffer, name: "input.gif" }],
+      command: [
+        "-O3 --lossy=80 --colors 128 input.gif -o /out/optimized.gif",
+      ],
+      isStrict: true,
+    });
+    if (!output?.[0]) return file;
+    const optimized = new Uint8Array(await output[0].arrayBuffer());
+    if (!optimized.length || optimized.length >= source.length) return file;
+    return { ...file, dataBase64: bytesToBase64(optimized) };
+  } catch (error) {
+    console.warn("Gifsicle optimize failed; keeping original GIF.", error);
+    return file;
+  }
+}
+
+async function encodeWithinSize({
+  duration,
+  width,
+  height,
+  bakeChecker,
+  renderFrame,
+  onProgress,
+}) {
+  const profiles = [
+        { scale: 1, fps: 20, colors: 256 },
+        { scale: 0.9, fps: 18, colors: 192 },
+        { scale: 0.8, fps: 15, colors: 128 },
+        { scale: 0.7, fps: 12, colors: 96 },
+        { scale: 0.6, fps: 10, colors: 64 },
+        { scale: 0.5, fps: 8, colors: 48 },
+        { scale: 0.4, fps: 6, colors: 32 },
+        { scale: 0.3, fps: 5, colors: 24 },
+        { scale: 0.22, fps: 4, colors: 16 },
+      ];
+  let result = null;
+  for (let profileIndex = 0; profileIndex < profiles.length; profileIndex += 1) {
+    const profile = profiles[profileIndex];
+    const outputWidth = Math.max(2, Math.round(width * profile.scale));
+    const outputHeight = Math.max(2, Math.round(height * profile.scale));
+    const frameCount = Math.max(2, Math.round(duration * profile.fps));
+    const gif = GIFEncoder();
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      const elapsed = (frame / Math.max(1, frameCount - 1)) * duration;
+      const rawCanvas = await renderFrame(elapsed);
+      const frameCanvas = resizedCanvas(rawCanvas, outputWidth, outputHeight);
+      const pixels = normalizeGifAlpha(
+        framePixelsForExport(
+          frameCanvas,
+          bakeChecker,
+          outputWidth,
+          outputHeight,
+        ),
+      );
+      const palette = quantize(pixels, profile.colors, {
+        format: "rgba4444",
+        oneBitAlpha: true,
+        clearAlpha: true,
+        clearAlphaThreshold: 0,
+        clearAlphaColor: 0,
+      });
+      const bitmap = applyPalette(pixels, palette, "rgba4444");
+      const transparentIndex = palette.findIndex((color) => color[3] === 0);
+      if (transparentIndex >= 0) {
+        const transparentIndexes = new Set(
+          palette
+            .map((color, index) => (color[3] === 0 ? index : -1))
+            .filter((index) => index >= 0),
+        );
+        for (let index = 0; index < bitmap.length; index += 1) {
+          if (transparentIndexes.has(bitmap[index])) bitmap[index] = transparentIndex;
+        }
+      }
+      gif.writeFrame(bitmap, outputWidth, outputHeight, {
+        palette,
+        delay: (duration * 1000) / frameCount,
+        repeat: 0,
+        transparent: transparentIndex >= 0,
+        transparentIndex: Math.max(0, transparentIndex),
+        dispose: 2,
+      });
+      onProgress?.(frame, frameCount, profileIndex, profiles.length);
+      await new Promise(requestAnimationFrame);
+    }
+    gif.finish();
+    const bytes = gif.bytes();
+    result = { bytes, ...profile, width: outputWidth, height: outputHeight };
+    if (bytes.length <= MAX_GIF_BYTES) break;
+  }
+  return result;
+}
+
+function appNav() {
+  return `<div class="feature-topbar"><button class="feature-back" data-do="back-home">← Back to Features</button><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login for Google Sheets" : "OAuth chưa cấu hình"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></div>`;
+}
+
+app.addEventListener("click", async (event) => {
+  const link = event.target.closest(".closure-sheet-link");
+  if (!link) return;
+  event.preventDefault();
+  try {
+    await window.spinePreview.openSheetLink(link.href.trim());
+  } catch (error) {
+    state.workspace.error = "Không mở được trình duyệt. Đóng app và chạy lại npm start để cập nhật chức năng mở link.";
+    render();
+  }
+});
+
+function workspaceSettings() {
+  const w = state.workspace;
+  const sheetUrl = String(w.sheetUrl || "").trim();
+  const url = /^https:\/\/docs\.google\.com\/spreadsheets\//.test(sheetUrl) ? sheetUrl : "";
+  return `<section class="workspace-settings"><div class="sheet-link-field"><span>Closure Sheet URL</span>${url ? `<a class="closure-sheet-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)} <b aria-hidden="true">↗</b></a>` : `<p>Closure Sheet chưa được cấu hình trong bản build</p>`}</div></section>`;
+}
+
+function render() {
+  document.body.dataset.module = state.module;
+  if (state.module === "home") return renderHome();
+  if (state.module === "export") return renderExporter();
+  if (state.module === "upload") return renderUpload();
+  if (state.module === "naming") return renderNaming();
+  return renderCatalog();
+}
+
+function renderHome() {
+  const features = [
+    ["catalog", "01", "Tạo Sheet", "Scan Animation và UI_EN trên máy, dựng cấu trúc tab closure."],
+    ["export", "02", "Tạo GIF", "Preview, trim và batch export Spine animation."],
+    ["upload", "03", "Upload GIF", "Load Sheet, drag GIF vào từng row và upload."],
+    ["naming", "04", "Naming Check", "Kiểm tra folder, file và animation name trước handoff."],
+  ];
+app.innerHTML = `<main class="feature-home"><header><div class="app-logo"><b>葉</b><div><strong>Xóm Nhà Lá</strong><span>Bộ đồ nghề của cả xóm</span></div></div><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login để dùng Google Sheets" : "Build chưa có OAuth Client ID"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></header><section class="feature-hero"><small>NHỎ MÀ CÓ VÕ</small><h1>Chuyện gì cũng có tool.</h1></section><section class="feature-grid">${features.map(([id, number, title, description]) => `<button data-do="switch-module" data-module="${id}"><span class="feature-number">${number}</span><i class="feature-symbol" aria-hidden="true">${({ catalog: "▦", export: "▶", upload: "↥", naming: "Aa" })[id]}</i><div><h2>${title}</h2><p>${description}</p></div><b class="feature-enter">Mở tool ↗</b></button>`).join("")}</section></main>`;
+}
+
+function pageNotice() {
+  const w = state.workspace;
+  return `${w.error ? `<div class="notice error">${esc(w.error)}</div>` : ""}${w.message ? `<div class="notice ok">${esc(w.message)}</div>` : ""}`;
+}
+
+function renderCatalog() {
+  const w = state.workspace;
+  const catalog = w.catalog;
+  const sheetConfigured = state.google.signedIn && w.sheetUrl;
+  const actions = `<div class="module-actions"><button class="danger-action" data-do="clear-catalog" ${!sheetConfigured || w.busy ? "disabled" : ""}>Clear all data</button><button class="copy-sheet-action" data-do="copy-sheet" ${!w.sheetUrl || w.busy ? "disabled" : ""}>Make a copy ↗</button><button class="primary-action" data-do="create-catalog" ${!catalog || !sheetConfigured || w.busy ? "disabled" : ""}>Create / Update Sheet</button></div>`;
+  const preview = catalog
+    ? `<div class="catalog-summary"><div><strong>${esc(catalog.rootName)}</strong><span>${catalog.tabs.length} tabs · ${catalog.tabs.reduce((sum, tab) => sum + tab.items.length, 0)} items</span></div>${w.busy ? `<progress max="1" value="${w.progress}"></progress>` : ""}</div><div class="catalog-tabs">${catalog.tabs.map((tab) => `<article><header><div><b>${esc(tab.title)}</b><span>${tab.source === "ui" ? "UI images" : "Animation assets"}</span></div><strong>${tab.items.length}</strong></header><ol>${tab.items.slice(0, 8).map((item) => `<li><span>${esc(item.name)}</span>${item.group ? `<small>${esc(item.group)}</small>` : ""}</li>`).join("")}${tab.items.length > 8 ? `<li class="more">+${tab.items.length - 8} more</li>` : ""}</ol></article>`).join("")}</div>`
+    : `<div class="module-empty"><b>Chưa scan folder local</b><span>Chọn folder gốc chứa *_Animation và *_UI_EN rồi bấm Scan Local.</span></div>`;
+app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><small>Feature 01</small><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${workspaceSettings()}<section class="drive-source"><label><span>Local root folder</span><div><input readonly value="${esc(w.driveUrl)}" placeholder="Chọn folder data hoặc project root..."><button data-do="pick-local-root" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-local" ${!w.driveUrl || w.busy ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan Local"}</button></div></label></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
+}
+
+function renderUpload() {
+  const w = state.workspace;
+  const sheet = w.sheet;
+  const selectedCount = w.uploadRows.filter((row) => row.file).length;
+  const canUpload = selectedCount && state.google.signedIn && w.sheetUrl && !w.busy;
+  const rows = w.uploadRows.length
+    ? `<div class="upload-head"><span>#</span><span>Animation item</span><span>GIF file</span></div>${w.uploadRows.map((row, index) => `<div class="upload-row ${row.status || ""}" data-upload-index="${index}"><span>${esc(row.index)}</span><div><b>${esc(row.name)}</b><small>Row ${row.rowNumber} · Preview C${row.rowNumber}</small></div><button class="file-drop" data-do="pick-upload-file"><input type="file" accept="image/gif" data-upload-file="${index}"><strong>${row.file ? esc(row.file.name) : "Drop GIF or choose file"}</strong><span>${row.status === "done" ? "Uploaded" : row.status === "uploading" ? "Queued / uploading…" : row.status === "failed" ? "Failed" : row.file ? `${Math.round(row.file.size / 1024)} KB` : "GIF only"}</span></button></div>`).join("")}`
+    : `<div class="module-empty"><b>Chưa có animation rows</b><span>Closure Sheet được cấu hình sẵn trong bản build; bấm Load Sheet để bắt đầu.</span></div>`;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><small>Feature 03</small><h1>Upload GIF</h1><p>Load animation rows, gắn GIF và upload qua queue tự động.</p></div><button class="primary-action" data-do="upload-all" ${canUpload ? "" : "disabled"}>Upload ${selectedCount || ""} GIF</button></header>${workspaceSettings()}<section class="upload-controls"><button data-do="load-sheet" ${!state.google.signedIn || !w.sheetUrl || w.busy ? "disabled" : ""}>${w.busy ? "Loading…" : "Load Sheet"}</button>${sheet ? `<label><span>Sheet tab</span><select data-role="closure-tab">${sheet.tabs.map((tab) => `<option value="${esc(tab)}" ${sheet.selected === tab ? "selected" : ""}>${esc(tab)}</option>`).join("")}</select></label><strong>${esc(sheet.title)}</strong>` : ""}</section>${pageNotice()}${w.busy ? `<div class="upload-progress"><span style="width:${Math.max(0.02, w.progress) * 100}%"></span></div>` : ""}<section class="upload-list">${rows}</section></main>`;
+}
+
+function renderNaming() {
+  const n = state.naming;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><small>Feature 04</small><h1>Naming Check</h1><p>Bắt khoảng trắng, ký tự + -, ký tự đặc biệt trong folder, file và animation name.</p></div><button class="primary-action" data-do="scan-naming" ${!n.folder || n.scanning ? "disabled" : ""}>${n.scanning ? "Checking…" : "Run Check"}</button></header><section class="naming-source"><label><span>Local asset folder</span><div><input data-naming-folder value="${esc(n.folder)}" placeholder="Chọn folder asset cần kiểm tra..."><button data-do="pick-naming-folder">Browse</button></div></label></section>${n.error ? `<div class="notice error">${esc(n.error)}</div>` : ""}<section class="naming-results">${n.issues.length ? `<div class="naming-head"><span>Type</span><span>Current name / path</span><span>Issues</span><span>Suggestion</span></div>${n.issues.map((issue) => `<div class="naming-row"><b>${esc(issue.type)}</b><div><strong>${esc(issue.name)}</strong><small>${esc(issue.relativePath)}</small></div><span>${issue.reasons.map(esc).join(" · ")}</span><code>${esc(issue.suggestion)}</code></div>`).join("")}` : `<div class="module-empty"><b>${n.folder ? "Chưa phát hiện naming issue" : "Chọn folder để kiểm tra"}</b><span>Tool không tự rename; chỉ report để team sửa an toàn.</span></div>`}</section></main>`;
+}
+
+function renderExporter() {
+  const count = selected().length,
+    total = state.files.reduce((n, f) => n + f.animations.length, 0),
+    visible = visibleFiles();
+  app.innerHTML = `${appNav()}<main class="exporter-page"><header class="module-header"><div><small>Feature 02</small><h1>Tạo GIF</h1><p>Chọn animation, chỉnh timeframe và xuất GIF cho closure.</p></div><div class="stats"><span><strong>${state.files.length}</strong> Spine</span><span><strong>${total}</strong> anim</span><span><strong>${count}</strong> selected</span></div></header>
+  <section class="toolbar"><label><span>Source folder</span><div><input data-source value="${esc(state.source)}" placeholder="Folder chứa Spine..."><button data-do="source">${icon("folder")}</button></div></label><button class="scan" data-do="scan" ${state.scanning ? "disabled" : ""}>${state.scanning ? "Scanning…" : "Scan Spine"}</button><i></i><label><span>GIF output</span><div><input data-output value="${esc(state.output)}" placeholder="Folder lưu GIF..."><button data-do="output">${icon("folder")}</button></div></label></section>
+  ${state.error ? `<div class="notice error">${esc(state.error)}</div>` : ""}${state.status ? `<div class="notice ok">${esc(state.status)}</div>` : ""}
+  <section class="batch-tools"><label><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input data-search value="${esc(state.search)}" placeholder="Search Spine hoặc animation..."></label><button class="clear-search ${state.search ? "" : "hidden"}" data-do="clear-search">Clear</button><span></span><button class="check-first" data-do="check-first" ${state.files.length ? "" : "disabled"}>Check first <b>${state.files.filter((file) => file.animations.length).length}</b></button><button class="uncheck-all" data-do="uncheck-all" ${count ? "" : "disabled"}>Uncheck all <b>${count || ""}</b></button></section>
+  <section class="workspace"><div class="headrow"><span>Spine asset</span><span>Animations · chọn skin và animation để export</span></div><div class="groups">${visible.length ? visible.map(groupView).join("") : emptyView(Boolean(state.search))}</div></section>
+  <footer><div class="progress"><div><span>${state.exporting ? esc(state.status) : `${count} animation ready`}</span><strong>${state.exporting ? `${Math.round(state.progress * 100)}%` : state.combineSymbols ? "GROUP · AUTO OPTIMIZE" : "AUTO CROP · MAX 0.5 MB"}</strong></div><aside><em style="width:${state.exporting ? state.progress * 100 : 0}%"></em></aside></div><label class="export-option"><span>All duration</span><select data-role="global-duration">${GLOBAL_DURATIONS.map((value) => `<option value="${value}" ${state.globalDuration === value ? "selected" : ""}>${value}s</option>`).join("")}</select></label><label class="export-option"><span>Object size</span><select data-role="object-size">${OBJECT_SIZES.map((value) => `<option value="${value}" ${state.objectSize === value ? "selected" : ""}>${value}%</option>`).join("")}</select></label><label class="export-option"><span>Padding</span><select data-role="crop-padding"><option value="4" ${state.cropPadding === 4 ? "selected" : ""}>4 px</option><option value="8" ${state.cropPadding === 8 ? "selected" : ""}>8 px</option><option value="16" ${state.cropPadding === 16 ? "selected" : ""}>16 px</option><option value="24" ${state.cropPadding === 24 ? "selected" : ""}>24 px</option></select></label>${state.combineSymbols ? `<label class="export-option"><span>Object / row</span><select data-role="group-per-row">${[2, 3, 4, 5, 6].map((value) => `<option value="${value}" ${state.groupPerRow === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>` : ""}<label class="checker-export"><input type="checkbox" data-role="optimize-gif" ${state.optimizeGif ? "checked" : ""}><span>Optimize GIF</span></label><label class="checker-export"><input type="checkbox" data-role="combine-symbols" ${state.combineSymbols ? "checked" : ""}><span>Gộp Anim</span></label><label class="checker-export"><input type="checkbox" data-role="bake-checker" ${state.bakeChecker ? "checked" : ""}><span>Nền caro</span></label><button class="export" data-do="export" ${!count || state.exporting ? "disabled" : ""}>${icon("export")} ${state.exporting ? "Exporting…" : state.combineSymbols ? `Export 1 Group GIF` : `Export ${count} GIF${count === 1 ? "" : "s"}`}</button></footer>
+  <aside class="preview ${state.active ? "open" : ""}"><div class="preview-title"><div><strong data-preview-name>Preview</strong><span>Loop theo đúng timeframe và skin đã chọn</span></div><div class="preview-actions"><button data-do="toggle-preview" title="Play/Pause">${state.previewPaused ? "▶" : "Ⅱ"}</button><button data-do="close" title="Đóng preview">×</button></div></div><div data-canvas class="canvas"></div>${previewTrimView()}</aside></main>`;
+  mountStage();
+}
+function emptyView(searching = false) {
+  return `<div class="empty">${icon("folder")}<h2>${searching ? "Không tìm thấy kết quả" : "Chưa có Spine nào"}</h2><p>${searching ? `Không có Spine hoặc animation khớp với “${esc(state.search)}”.` : "Chọn source folder và scan. Tool sẽ gom asset theo chiều dọc, mỗi Spine là một group animation."}</p></div>`;
+}
+function groupView(f, i) {
+  return `<article class="group"><aside class="file"><small>${String(i + 1).padStart(2, "0")}</small><div><h2>${esc(f.fileName.replace(/\.json$/i, ""))}</h2><strong class="anim-count"><b>${f.animations.length}</b> animations</strong><div class="file-meta"><span>Spine ${esc(f.version)}</span></div></div></aside><section>${f.animations.map((a) => animView(f, a)).join("") || '<p class="none">Không có animation</p>'}</section></article>`;
+}
+function animView(f, a) {
+  const c = configOf(f, a),
+    d = durationOf(f, a),
+    max = Math.max(d, c.end, 0.01),
+    k = keyOf(f, a);
+  const skinOptions = f.skins?.length
+    ? f.skins
+        .map(
+          (skin) =>
+            `<option value="${esc(skin)}" ${c.skin === skin ? "selected" : ""}>${esc(skin)}</option>`,
+        )
+        .join("")
+    : '<option value="">Default</option>';
+  return `<div class="anim ${c.selected ? "selected" : ""} ${state.active === k ? "active" : ""}" data-key="${esc(k)}"><label class="check" title="Chọn animation để export GIF"><input type="checkbox" data-role="select" ${c.selected ? "checked" : ""}><span></span></label><div class="anim-name"><b>◆</b><strong>${esc(a)}</strong></div><label class="skin"><span>Skin</span><select data-role="skin" ${f.skins?.length ? "" : "disabled"}>${skinOptions}</select></label><div class="row-progress" data-trim-editor data-key="${esc(k)}"><div><span>${fmt(c.start)}</span><output>${fmt(c.end)}</output></div><section style="--a:${(c.start / max) * 100}%;--b:${(c.end / max) * 100}%"><i></i><b></b><input type="range" data-role="start" min="0" max="${max}" step=".01" value="${c.start}"><input type="range" data-role="end" min="0" max="${max}" step=".01" value="${c.end}"></section></div><button class="preview-row-btn" data-do="preview">Preview</button></div>`;
+}
+
+function previewTrimView() {
+  const x = findItem(state.active);
+  if (!x) return "";
+  const c = x.config,
+    max = Math.max(durationOf(x.file, x.animation), c.end, 0.01);
+  return `<div class="preview-trim" data-trim-editor data-key="${esc(state.active)}"><div class="preview-trim-head"><span>Timeframe</span><output>${fmt(c.start)} — ${fmt(c.end)} <em>${fmt(c.end - c.start)}</em></output></div><div class="trim"><section style="--a:${(c.start / max) * 100}%;--b:${(c.end / max) * 100}%"><i></i><b></b><input type="range" data-role="start" min="0" max="${max}" step=".01" value="${c.start}"><input type="range" data-role="end" min="0" max="${max}" step=".01" value="${c.end}"></section></div><div class="times"><label>From<input data-role="start-number" type="number" min="0" max="${max}" step=".01" value="${c.start.toFixed(2)}"></label><label>To<input data-role="end-number" type="number" min="0" max="${max}" step=".01" value="${c.end.toFixed(2)}"></label></div></div>`;
+}
+function findItem(key) {
+  return items().find((x) => keyOf(x.file, x.animation) === key);
+}
+
+async function scan() {
+  if (!state.source.trim()) {
+    state.error = "Chọn source folder trước.";
+    render();
+    return;
+  }
+  state.scanning = true;
+  state.error = "";
+  state.status = "";
+  render();
+  const r = await window.spinePreview.scanFolder(state.source.trim());
+  state.scanning = false;
+  if (r?.error) {
+    state.error = r.error;
+    state.files = [];
+  } else {
+    state.files = r.files || [];
+    state.status = `Đã tìm thấy ${state.files.length} Spine asset.`;
+    if (!state.output) state.output = state.source;
+  }
+  localStorage.setItem("gif-source", state.source);
+  localStorage.setItem("gif-output", state.output);
+  render();
+}
+function destroyStage() {
+  cancelAnimationFrame(state.previewFrame);
+  state.previewFrame = 0;
+  state.stage?.destroy();
+  state.stage = null;
+  state.spine = null;
+}
+
+function startPreviewLoop(item, startTime = item.config.start) {
+  cancelAnimationFrame(state.previewFrame);
+  state.previewPaused = false;
+  state.previewStartedAt =
+    performance.now() - (startTime - item.config.start) * 1000;
+  const tick = (now) => {
+    if (
+      !state.stage ||
+      !state.spine ||
+      state.active !== keyOf(item.file, item.animation)
+    )
+      return;
+    if (!state.previewPaused) {
+      const length = Math.max(0.01, item.config.end - item.config.start);
+      const time =
+        item.config.start + (((now - state.previewStartedAt) / 1000) % length);
+      SpineStage.seek(state.spine, time);
+      state.stage.renderOnce();
+      state.previewPauseTime = time;
+    }
+    state.previewFrame = requestAnimationFrame(tick);
+  };
+  state.previewFrame = requestAnimationFrame(tick);
+}
+function mountStage() {
+  if (state.stage && state.active) {
+    const box = document.querySelector("[data-canvas]");
+    if (box) {
+      state.stage.setContainer(box);
+      box.appendChild(state.stage.app.view);
+      state.stage.syncViewportSize();
+      state.stage.renderOnce();
+    }
+  }
+}
+function fit(stage, spine) {
+  const b = spine.getLocalBounds(),
+    v = stage.app.screen,
+    s = Math.min(
+      (v.width * 0.8) / Math.max(1, b.width),
+      (v.height * 0.8) / Math.max(1, b.height),
+    );
+  spine.scale.set(clamp(s, 0.05, 8));
+  stage.centerSpineAt(spine, v.width / 2, v.height / 2);
+}
+async function preview(key) {
+  const x = findItem(key);
+  if (!x) return;
+  state.active = key;
+  destroyStage();
+  render();
+  try {
+    const box = document.querySelector("[data-canvas]"),
+      stage = new SpineStage(box, {
+        backgroundColor: 0x000000,
+        backgroundAlpha: 0,
+        resolution: 1,
+      });
+    stage.app.ticker.stop();
+    const spine = await stage.loadSpine(x.file);
+    if (x.config.skin) SpineStage.setSkin(spine, x.config.skin);
+    SpineStage.playAnimation(spine, x.animation, false);
+    SpineStage.seek(spine, x.config.start);
+    fit(stage, spine);
+    stage.renderOnce();
+    state.stage = stage;
+    state.spine = spine;
+    startPreviewLoop(x);
+    document.querySelector("[data-preview-name]").textContent =
+      `${x.file.fileName.replace(/\.json$/i, "")} / ${x.animation}`;
+  } catch (e) {
+    state.error = e.message;
+    destroyStage();
+    render();
+  }
+}
+function trim(editor, role, raw) {
+  const x = findItem(editor.dataset.key);
+  if (!x) return;
+  const max = Math.max(durationOf(x.file, x.animation), x.config.end, 0.01),
+    v = clamp(Number(raw) || 0, 0, max);
+  if (role.startsWith("start"))
+    x.config.start = Math.min(v, x.config.end - 0.01);
+  else x.config.end = Math.max(v, x.config.start + 0.01);
+  document.querySelectorAll("[data-trim-editor]").forEach((linkedEditor) => {
+    if (linkedEditor.dataset.key !== editor.dataset.key) return;
+    linkedEditor.querySelector("[data-role=start]").value = x.config.start;
+    linkedEditor.querySelector("[data-role=end]").value = x.config.end;
+    const startNumber = linkedEditor.querySelector("[data-role=start-number]");
+    const endNumber = linkedEditor.querySelector("[data-role=end-number]");
+    if (startNumber) startNumber.value = x.config.start.toFixed(2);
+    if (endNumber) endNumber.value = x.config.end.toFixed(2);
+    const output = linkedEditor.querySelector("output");
+    if (output) {
+      output.innerHTML = linkedEditor.classList.contains("row-progress")
+        ? fmt(x.config.end)
+        : `${fmt(x.config.start)} — ${fmt(x.config.end)} <em>${fmt(x.config.end - x.config.start)}</em>`;
+    }
+    const startLabel = linkedEditor.querySelector(".row-progress span");
+    if (startLabel) startLabel.textContent = fmt(x.config.start);
+    const bar = linkedEditor.querySelector(
+      ".trim section, .row-progress section",
+    );
+    bar.style.setProperty("--a", `${(x.config.start / max) * 100}%`);
+    bar.style.setProperty("--b", `${(x.config.end / max) * 100}%`);
+  });
+  if (state.active === editor.dataset.key && state.spine) {
+    SpineStage.seek(
+      state.spine,
+      role.startsWith("start") ? x.config.start : x.config.end,
+    );
+    state.stage.renderOnce();
+    state.previewStartedAt = performance.now();
+  }
+}
+
+async function encode(x, n, total) {
+  const host = document.createElement("div");
+  host.className = "offscreen";
+  document.body.append(host);
+  const stage = new SpineStage(host, {
+    backgroundColor: 0x000000,
+    backgroundAlpha: 0,
+    resolution: 1,
+  });
+  stage.app.ticker.stop();
+  try {
+    const spine = await stage.loadSpine(x.file);
+    if (x.config.skin) SpineStage.setSkin(spine, x.config.skin);
+    SpineStage.playAnimation(spine, x.animation, false);
+    const frames = Math.max(
+        2,
+        Math.round((x.config.end - x.config.start) * FPS),
+      ),
+      samples = [];
+    for (let i = 0; i < frames; i++) {
+      const time =
+        x.config.start +
+        (i / Math.max(1, frames - 1)) * (x.config.end - x.config.start);
+      SpineStage.seek(spine, time);
+      const b = spine.getLocalBounds();
+      samples.push({
+        time,
+        x: b.x,
+        y: b.y,
+        r: b.x + b.width,
+        b: b.y + b.height,
+      });
+    }
+    const u = samples.reduce(
+        (q, b) => ({
+          x: Math.min(q.x, b.x),
+          y: Math.min(q.y, b.y),
+          r: Math.max(q.r, b.r),
+          b: Math.max(q.b, b.b),
+        }),
+        { x: Infinity, y: Infinity, r: -Infinity, b: -Infinity },
+      ),
+      w = Math.max(1, u.r - u.x),
+      h = Math.max(1, u.b - u.y),
+      scale = Math.min(
+        (SIZE * (renderObjectSize() / 100)) / w,
+        (SIZE * (renderObjectSize() / 100)) / h,
+      );
+    spine.scale.set(clamp(scale, 0.05, 8));
+    spine.position.set(
+      SIZE / 2 - (u.x + w / 2) * spine.scale.x,
+      SIZE / 2 - (u.y + h / 2) * spine.scale.y,
+    );
+    let pixelBounds = null;
+    for (const sample of samples) {
+      SpineStage.seek(spine, sample.time);
+      stage.renderOnce();
+      const bounds = visiblePixelBounds(
+        stage.extractCanvasRegion(0, 0, SIZE, SIZE),
+      );
+      if (!bounds) continue;
+      pixelBounds = pixelBounds
+        ? {
+            left: Math.min(pixelBounds.left, bounds.left),
+            top: Math.min(pixelBounds.top, bounds.top),
+            right: Math.max(pixelBounds.right, bounds.right),
+            bottom: Math.max(pixelBounds.bottom, bounds.bottom),
+          }
+        : bounds;
+    }
+    const crop = expandCrop(pixelBounds, state.cropPadding, SIZE, SIZE);
+    const bakeChecker = state.bakeChecker || x.file.usesAdditiveBlend;
+    const duration = Math.max(0.05, x.config.end - x.config.start);
+    const encoded = await encodeWithinSize({
+      duration,
+      width: crop.width,
+      height: crop.height,
+      bakeChecker,
+      renderFrame: async (elapsed) => {
+        SpineStage.seek(spine, x.config.start + elapsed);
+        stage.renderOnce();
+        return stage.extractCanvasRegion(
+          crop.x,
+          crop.y,
+          crop.width,
+          crop.height,
+        );
+      },
+      onProgress: (frame, frameCount, profileIndex) => {
+        state.progress = (n + (frame + 1) / frameCount) / total;
+        state.status = `${profileIndex ? "Optimizing · " : ""}${x.file.fileName.replace(/\.json$/i, "")} / ${x.animation}`;
+        updateProgress();
+      },
+    });
+    return {
+      fileName: `${clean(x.file.fileName)}_${clean(x.animation)}.gif`,
+      dataBase64: bytesToBase64(encoded.bytes),
+    };
+  } finally {
+    stage.destroy();
+    host.remove();
+  }
+}
+
+async function encodeCombined(list) {
+  const width = 960,
+    height = 540;
+  const host = document.createElement("div");
+  host.className = "offscreen";
+  host.style.width = `${width}px`;
+  host.style.height = `${height}px`;
+  document.body.append(host);
+  const stage = new SpineStage(host, {
+    backgroundColor: 0x000000,
+    backgroundAlpha: 0,
+    resolution: 1,
+  });
+  stage.app.ticker.stop();
+  try {
+    const loaded = [];
+    const columns = Math.min(state.groupPerRow, list.length);
+    const rows = Math.ceil(list.length / columns);
+    const cellWidth = width / columns;
+    const cellHeight = height / rows;
+    for (let index = 0; index < list.length; index += 1) {
+      const item = list[index];
+      const spine = await stage.loadSpine(item.file);
+      if (item.config.skin) SpineStage.setSkin(spine, item.config.skin);
+      SpineStage.playAnimation(spine, item.animation, false);
+      SpineStage.seek(spine, item.config.start);
+      const bounds = spine.getLocalBounds();
+      const scale = Math.min(
+        ((cellWidth - state.cropPadding * 2) * (renderObjectSize() / 100)) /
+          Math.max(1, bounds.width),
+        ((cellHeight - state.cropPadding * 2) * (renderObjectSize() / 100)) /
+          Math.max(1, bounds.height),
+      );
+      spine.scale.set(clamp(scale, 0.03, 8));
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      stage.centerSpineAt(
+        spine,
+        column * cellWidth + cellWidth / 2,
+        row * cellHeight + cellHeight / 2,
+      );
+      loaded.push({ item, spine });
+    }
+    const duration = Math.max(
+      ...list.map((item) =>
+        Math.max(0.05, item.config.end - item.config.start),
+      ),
+    );
+    const frameCount = Math.max(2, Math.round(duration * FPS));
+    let pixelBounds = null;
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      const elapsed = frame / FPS;
+      loaded.forEach(({ item, spine }) => {
+        const length = Math.max(0.01, item.config.end - item.config.start);
+        SpineStage.seek(spine, item.config.start + (elapsed % length));
+      });
+      stage.renderOnce();
+      const bounds = visiblePixelBounds(
+        stage.extractCanvasRegion(0, 0, width, height),
+      );
+      if (!bounds) continue;
+      pixelBounds = pixelBounds
+        ? {
+            left: Math.min(pixelBounds.left, bounds.left),
+            top: Math.min(pixelBounds.top, bounds.top),
+            right: Math.max(pixelBounds.right, bounds.right),
+            bottom: Math.max(pixelBounds.bottom, bounds.bottom),
+          }
+        : bounds;
+    }
+    const crop = expandCrop(pixelBounds, state.cropPadding, width, height);
+    const bakeChecker =
+      state.bakeChecker || list.some((item) => item.file.usesAdditiveBlend);
+    const encoded = await encodeWithinSize({
+      duration,
+      width: crop.width,
+      height: crop.height,
+      bakeChecker,
+      renderFrame: async (elapsed) => {
+        loaded.forEach(({ item, spine }) => {
+          const length = Math.max(0.01, item.config.end - item.config.start);
+          SpineStage.seek(spine, item.config.start + (elapsed % length));
+        });
+        stage.renderOnce();
+        return stage.extractCanvasRegion(
+          crop.x,
+          crop.y,
+          crop.width,
+          crop.height,
+        );
+      },
+      onProgress: (frame, count, profileIndex) => {
+        state.progress = (frame + 1) / count;
+        state.status = `${profileIndex ? "Optimizing" : "Rendering group"} · ${frame + 1}/${count}`;
+        updateProgress();
+      },
+    });
+    return {
+      fileName: "anim_group.gif",
+      dataBase64: bytesToBase64(encoded.bytes),
+    };
+  } finally {
+    stage.destroy();
+    host.remove();
+  }
+}
+function updateProgress() {
+  const fill = document.querySelector("footer aside em"),
+    label = document.querySelector(".progress span"),
+    pct = document.querySelector(".progress strong");
+  if (fill) fill.style.width = `${state.progress * 100}%`;
+  if (label) label.textContent = state.status;
+  if (pct) pct.textContent = `${Math.round(state.progress * 100)}%`;
+}
+async function exportAll() {
+  const list = selected();
+  if (!list.length) return;
+  if (!state.output.trim()) {
+    state.error = "Chọn folder output trước.";
+    render();
+    return;
+  }
+  state.exporting = true;
+  state.error = "";
+  state.status = "Đang chuẩn bị…";
+  render();
+  try {
+    const files = [];
+    if (state.combineSymbols) {
+      files.push(await encodeCombined(list));
+    } else {
+      for (let i = 0; i < list.length; i++)
+        files.push(await encode(list[i], i, list.length));
+    }
+    if (state.optimizeGif) {
+      for (let index = 0; index < files.length; index += 1) {
+        state.status = `Optimizing GIF · ${index + 1}/${files.length}`;
+        state.progress = (index + 1) / files.length;
+        updateProgress();
+        files[index] = await optimizeGifFile(files[index]);
+      }
+    }
+    const r = await window.spinePreview.saveBatchGifs({
+      outputDir: state.output.trim(),
+      files,
+    });
+    if (!r?.ok) throw new Error(r?.error || "Không lưu được GIF.");
+    state.status = `Đã export ${r.writtenFiles.length} GIF vào ${state.output}.`;
+  } catch (e) {
+    state.error = e.message || "Export GIF thất bại.";
+    state.status = "";
+  }
+  state.exporting = false;
+  state.progress = 0;
+  render();
+}
+
+app.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-do]");
+  if (!b) {
+    const row = e.target.closest(".anim");
+    const isControl = e.target.closest(
+      "input, select, button, label, [data-trim-editor]",
+    );
+    if (row && !isControl) {
+      const item = findItem(row.dataset.key);
+      if (item) {
+        item.config.selected = !item.config.selected;
+        render();
+      }
+    }
+    return;
+  }
+  const a = b.dataset.do;
+  if (a === "switch-module") {
+    if (state.module === "export") destroyStage();
+    state.module = b.dataset.module;
+    render();
+    if (state.module === "export" && state.source && !state.files.length) scan();
+  } else if (a === "back-home") {
+    if (state.module === "export") destroyStage();
+    state.module = "home";
+    render();
+  } else if (a === "google-sign-in") {
+    state.google.busy = true;
+    render();
+    const result = await window.spinePreview.googleSignIn();
+    state.google.busy = false;
+    if (result?.ok) { state.google.signedIn = true; state.google.user = result.user; }
+    else state.workspace.error = result?.error || "Đăng nhập Google thất bại.";
+    render();
+  } else if (a === "google-sign-out") {
+    await window.spinePreview.googleSignOut();
+    state.google.signedIn = false;
+    state.google.user = null;
+    state.module = "home";
+    render();
+  } else if (a === "pick-local-root") {
+    const folder = await window.spinePreview.selectFolder();
+    if (folder) {
+      state.workspace.driveUrl = folder;
+      state.workspace.catalog = null;
+      localStorage.setItem("closure-local-root", folder);
+      render();
+    }
+  } else if (a === "scan-local") {
+    const w = state.workspace;
+    w.busy = true; w.error = ""; w.message = "";
+    render();
+    const result = await window.spinePreview.scanLocalCatalog(w.driveUrl);
+    w.busy = false;
+    if (result?.ok) { w.catalog = result; w.message = `Đã đọc ${result.tabs.length} tab từ folder local.`; }
+    else w.error = result?.error || "Không scan được folder local.";
+    render();
+  } else if (a === "copy-sheet") {
+    const id = String(state.workspace.sheetUrl || "").match(/\/spreadsheets\/d\/([\w-]+)/)?.[1];
+    if (!id) return;
+    try {
+      await window.spinePreview.openSheetLink(`https://docs.google.com/spreadsheets/d/${id}/copy`);
+    } catch (error) {
+      state.workspace.error = error.message || "Không mở được trang tạo bản sao.";
+      render();
+    }
+  } else if (a === "clear-catalog") {
+    if (!window.confirm("Xoá toàn bộ dữ liệu và tất cả tab của Closure Sheet? Sheet sẽ chỉ còn một tab trắng mặc định.")) return;
+    const w = state.workspace;
+    w.busy = true; w.error = ""; w.message = "";
+    render();
+    const result = await window.spinePreview.clearCatalog();
+    w.busy = false;
+    if (result?.ok) w.message = "Đã xoá toàn bộ dữ liệu và tab; Sheet hiện còn một tab trắng mặc định.";
+    else w.error = result?.error || "Không thể xoá dữ liệu trong Sheet.";
+    render();
+  } else if (a === "create-catalog") {
+    const w = state.workspace;
+    w.busy = true; w.progress = 0; w.error = ""; w.message = "";
+    render();
+    const result = await window.spinePreview.createCatalog(w.sheetUrl, w.catalog);
+    if (!result?.ok) {
+      w.error = result?.error || "Không tạo được Sheet catalog.";
+    } else {
+      const images = w.catalog.tabs.flatMap((tab) => tab.items.map((item, index) => ({ ...item, tab: tab.title, row: index + 2 }))).filter((item) => item.kind === "image");
+      try {
+        if (images.length) {
+          w.message = `Preparing ${images.length} local images…`;
+          render();
+          const queued = await window.spinePreview.queueImages({
+            spreadsheetId: result.spreadsheetId,
+            images: images.map((item) => ({
+              sheetName: item.tab,
+              cell: `C${item.row}`,
+              localPath: item.localPath,
+              fileName: item.name,
+            })),
+          });
+          if (!queued?.ok) throw new Error(queued?.error || "Không tạo được image upload queue.");
+          const completed = await waitForUploadQueue(queued.jobId, queued.total, result.spreadsheetId);
+          if (completed.error) throw new Error(completed.errors.slice(0, 3).join(" · "));
+        }
+        w.message = `Completed · ${result.tabs} tabs updated · ${images.length} local images uploaded.`;
+      } catch (error) {
+        w.error = error.message || String(error);
+      }
+    }
+    w.busy = false; w.progress = 0;
+    render();
+  } else if (a === "load-sheet") {
+    const w = state.workspace;
+    w.busy = true; w.error = ""; w.message = ""; render();
+    const result = await window.spinePreview.loadClosureSheet(w.sheetUrl, w.sheet?.selected || "");
+    w.busy = false;
+    if (result?.ok) { w.sheet = result; w.uploadRows = result.rows.map((row) => ({ ...row, file: null, status: "" })); w.message = `Đã load ${result.rows.length} items.`; }
+    else w.error = result?.error || "Không load được Closure Sheet.";
+    render();
+  } else if (a === "pick-upload-file") {
+    if (e.target.matches('input[type="file"]')) return;
+    b.querySelector("input[type=file]")?.click();
+  } else if (a === "upload-all") {
+    const w = state.workspace;
+    const queue = w.uploadRows.filter((row) => row.file);
+    w.busy = true; w.error = ""; w.message = ""; w.progress = 0; render();
+    try {
+      w.message = `Preparing ${queue.length} GIF files…`; render();
+      const images = [];
+      for (let index = 0; index < queue.length; index += 1) {
+        const row = queue[index];
+        row.status = "ready";
+        images.push({ sheetName: w.sheet.selected, cell: `C${row.rowNumber}`, fileName: row.file.name, mimeType: row.file.type || "image/gif", dataBase64: await fileToBase64(row.file) });
+        w.progress = ((index + 1) / queue.length) * 0.1;
+        render();
+      }
+      const queued = await window.spinePreview.queueImages({ spreadsheetId: w.sheet.spreadsheetId, images });
+      if (!queued?.ok) throw new Error(queued?.error || "Không tạo được GIF upload queue.");
+      queue.forEach((row) => { row.status = "uploading"; });
+      const completed = await waitForUploadQueue(queued.jobId, queued.total, w.sheet.spreadsheetId);
+      queue.forEach((row) => { row.status = completed.error && completed.errors.some((message) => message.startsWith(row.file.name)) ? "failed" : "done"; });
+      if (completed.error) w.error = completed.errors.slice(0, 3).join(" · ");
+    } catch (error) {
+      w.error = error.message || String(error);
+    }
+    w.busy = false;
+    w.progress = 0;
+    if (!w.error) w.message = `Completed · ${queue.length} GIF uploaded to ${w.sheet.selected}.`;
+    render();
+  } else if (a === "pick-naming-folder") {
+    const folder = await window.spinePreview.selectFolder();
+    if (folder) { state.naming.folder = folder; localStorage.setItem("naming-folder", folder); render(); }
+  } else if (a === "scan-naming") {
+    const n = state.naming;
+    n.scanning = true; n.error = ""; render();
+    const result = await window.spinePreview.scanNamingIssues(n.folder);
+    n.scanning = false; n.issues = result?.issues || []; n.error = result?.error || ""; render();
+  } else if (a === "source") {
+    const v = await window.spinePreview.selectFolder();
+    if (v) {
+      state.source = v;
+      if (!state.output) state.output = v;
+      render();
+    }
+  } else if (a === "output") {
+    const v = await window.spinePreview.selectExportFolder();
+    if (v) {
+      state.output = v;
+      localStorage.setItem("gif-output", v);
+      render();
+    }
+  } else if (a === "scan") scan();
+  else if (a === "preview") preview(b.closest(".anim").dataset.key);
+  else if (a === "toggle-preview") {
+    const item = findItem(state.active);
+    if (!item || !state.spine) return;
+    state.previewPaused = !state.previewPaused;
+    if (!state.previewPaused) {
+      state.previewStartedAt =
+        performance.now() - (state.previewPauseTime - item.config.start) * 1000;
+    }
+    b.textContent = state.previewPaused ? "▶" : "Ⅱ";
+  } else if (a === "close") {
+    state.active = "";
+    destroyStage();
+    render();
+  } else if (a === "export") exportAll();
+  else if (a === "uncheck-all") {
+    items().forEach((item) => {
+      item.config.selected = false;
+    });
+    render();
+  } else if (a === "check-first") {
+    items().forEach((item) => {
+      item.config.selected = false;
+    });
+    state.files.forEach((file) => {
+      const firstAnimation = file.animations[0];
+      if (firstAnimation) configOf(file, firstAnimation).selected = true;
+    });
+    render();
+  } else if (a === "clear-search") {
+    state.search = "";
+    render();
+    document.querySelector("[data-search]")?.focus();
+  }
+});
+app.addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.matches("[data-workspace]")) {
+    const key = t.dataset.workspace;
+    state.workspace[key] = t.value;
+    localStorage.setItem(`closure-${key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`)}`, t.value);
+  } else if (t.matches("[data-naming-folder]")) {
+    state.naming.folder = t.value;
+    localStorage.setItem("naming-folder", t.value);
+  } else if (t.matches("[data-source]")) state.source = t.value;
+  else if (t.matches("[data-search]")) {
+    state.search = t.value;
+    const visible = visibleFiles();
+    const groups = document.querySelector(".groups");
+    if (groups) {
+      groups.innerHTML = visible.length
+        ? visible.map(groupView).join("")
+        : emptyView(Boolean(state.search));
+    }
+    document
+      .querySelector(".clear-search")
+      ?.classList.toggle("hidden", !state.search);
+  }
+  else if (t.matches("[data-output]")) {
+    state.output = t.value;
+    localStorage.setItem("gif-output", t.value);
+  } else if (t.matches("[data-role^=start],[data-role^=end]"))
+    trim(t.closest("[data-trim-editor]"), t.dataset.role, t.value);
+});
+app.addEventListener("change", (e) => {
+  const t = e.target,
+    row = t.closest(".anim");
+  if (t.dataset.role === "closure-tab") {
+    state.workspace.sheet.selected = t.value;
+    window.spinePreview.loadClosureSheet(state.workspace.sheetUrl, t.value).then((result) => {
+      if (result?.ok) { state.workspace.sheet = result; state.workspace.uploadRows = result.rows.map((item) => ({ ...item, file: null, status: "" })); }
+      else state.workspace.error = result?.error || "Không load được tab.";
+      render();
+    });
+    return;
+  }
+  if (t.matches("[data-upload-file]")) {
+    const target = state.workspace.uploadRows[Number(t.dataset.uploadFile)];
+    if (target && t.files?.[0]) { target.file = t.files[0]; target.status = "ready"; render(); }
+    return;
+  }
+  if (t.dataset.role === "bake-checker") {
+    state.bakeChecker = t.checked;
+    localStorage.setItem("gif-bake-checker", String(t.checked));
+    return;
+  }
+  if (t.dataset.role === "optimize-gif") {
+    state.optimizeGif = t.checked;
+    localStorage.setItem("gif-optimize", String(t.checked));
+    render();
+    return;
+  }
+  if (t.dataset.role === "combine-symbols") {
+    state.combineSymbols = t.checked;
+    localStorage.setItem("gif-combine-symbols", String(t.checked));
+    render();
+    return;
+  }
+  if (t.dataset.role === "object-size") {
+    state.objectSize = Number(t.value) || 80;
+    localStorage.setItem("gif-object-size", String(state.objectSize));
+    render();
+    return;
+  }
+  if (t.dataset.role === "global-duration") {
+    state.globalDuration = Number(t.value) || 1;
+    localStorage.setItem("gif-global-duration", String(state.globalDuration));
+    items().forEach((item) => {
+      item.config.end = item.config.start + state.globalDuration;
+    });
+    render();
+    return;
+  }
+  if (t.dataset.role === "crop-padding") {
+    state.cropPadding = Number(t.value) || 8;
+    localStorage.setItem("gif-crop-padding", String(state.cropPadding));
+    render();
+    return;
+  }
+  if (t.dataset.role === "group-per-row") {
+    state.groupPerRow = clamp(Number(t.value) || 5, 2, 6);
+    localStorage.setItem("gif-group-per-row", String(state.groupPerRow));
+    render();
+    return;
+  }
+  if (!row) return;
+  const x = findItem(row.dataset.key);
+  if (t.dataset.role === "select") {
+    x.config.selected = t.checked;
+    render();
+  } else if (t.dataset.role === "skin") {
+    x.config.skin = t.value;
+    if (state.active === row.dataset.key) preview(row.dataset.key);
+  }
+});
+app.addEventListener("dragover", (event) => {
+  const drop = event.target.closest(".file-drop");
+  if (!drop) return;
+  event.preventDefault();
+  drop.classList.add("dragging");
+});
+app.addEventListener("dragleave", (event) => {
+  event.target.closest(".file-drop")?.classList.remove("dragging");
+});
+app.addEventListener("drop", (event) => {
+  const drop = event.target.closest(".file-drop");
+  if (!drop) return;
+  event.preventDefault();
+  drop.classList.remove("dragging");
+  const row = drop.closest("[data-upload-index]");
+  const file = event.dataTransfer?.files?.[0];
+  if (!row || !file || file.type !== "image/gif") return;
+  const target = state.workspace.uploadRows[Number(row.dataset.uploadIndex)];
+  if (target) { target.file = file; target.status = "ready"; render(); }
+});
+window.addEventListener("resize", () => {
+  if (state.stage) {
+    state.stage.syncViewportSize();
+    fit(state.stage, state.spine);
+    state.stage.renderOnce();
+  }
+});
+render();
+window.spinePreview.googleStatus().then((result) => {
+  state.google.configured = Boolean(result?.configured);
+  state.google.signedIn = Boolean(result?.signedIn);
+  state.google.user = result?.user || null;
+  state.workspace.sheetUrl = result?.workspace?.sheetUrl || "";
+  render();
+});

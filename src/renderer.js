@@ -40,9 +40,12 @@ const state = {
   error: "",
   search: "",
   module: "home",
+  ownership: { sheetUrl: "", driveUrl: "", email: "", busy: false, message: "", error: "", results: [] },
   google: { configured: false, signedIn: false, user: null, busy: false },
   workspace: {
     driveUrl: localStorage.getItem("closure-local-root") || "",
+    animationFolder: localStorage.getItem("closure-animation-folder") || "_Animation",
+    uiFolder: localStorage.getItem("closure-ui-folder") || "_UI_EN",
     sheetUrl: "",
     catalog: null,
     sheet: null,
@@ -247,6 +250,7 @@ function base64ToBytes(base64) {
 }
 
 async function fileToBase64(file) {
+  if (file.dataBase64) return file.dataBase64;
   const bytes = new Uint8Array(await file.arrayBuffer());
   return bytesToBase64(bytes);
 }
@@ -404,7 +408,7 @@ function workspaceSettings() {
   const w = state.workspace;
   const sheetUrl = String(w.sheetUrl || "").trim();
   const url = /^https:\/\/docs\.google\.com\/spreadsheets\//.test(sheetUrl) ? sheetUrl : "";
-  return `<section class="workspace-settings"><div class="sheet-link-field"><span>Closure Sheet URL</span>${url ? `<a class="closure-sheet-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)} <b aria-hidden="true">↗</b></a>` : `<p>Closure Sheet chưa được cấu hình trong bản build</p>`}</div></section>`;
+  return `<section class="workspace-settings"><div class="sheet-link-field"><span>Closure Sheet URL</span>${state.module === "catalog" ? `<p class="sheet-workflow-hint">Đây là sheet gốc. Trước khi ghi data vào sheet, nên bấm <strong>Clear all data</strong>. Sau khi tạo sheet, bấm <strong>Make a copy</strong> để tạo một sheet mới dùng cho closure.</p>` : ""}${url ? `<a class="closure-sheet-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)} <b aria-hidden="true">↗</b></a>` : `<p>Closure Sheet chưa được cấu hình trong bản build</p>`}</div></section>`;
 }
 
 function render() {
@@ -413,6 +417,7 @@ function render() {
   if (state.module === "export") return renderExporter();
   if (state.module === "upload") return renderUpload();
   if (state.module === "naming") return renderNaming();
+  if (state.module === "ownership") return renderOwnership();
   return renderCatalog();
 }
 
@@ -421,9 +426,10 @@ function renderHome() {
     ["catalog", "01", "Tạo Sheet", "Scan Animation và UI_EN trên máy, dựng cấu trúc tab closure."],
     ["export", "02", "Tạo GIF", "Preview, trim và batch export Spine animation."],
     ["upload", "03", "Upload GIF", "Load Sheet, drag GIF vào từng row và upload."],
-    ["naming", "04", "Cảnh sát chính tả", "Kiểm tra folder, file và animation name trước handoff."],
+    ["ownership", "04", "Chuyển owner", "Bàn giao Sheet và folder asset cho tài khoản quản lý."],
+    ["naming", "05", "Cảnh sát chính tả", "Kiểm tra folder, file và animation name trước handoff."],
   ];
-app.innerHTML = `<main class="feature-home"><header><div class="app-logo"><b class="village-logo" aria-label="Logo Xóm Nhà Lá"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 25 24 12l16 13" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 25v14h22V25M22 39V29h7v10" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/><path d="M25 13C25 4 33 3 40 5c0 8-5 13-13 10" fill="currentColor"/><path d="m27 13 8-5" fill="none" stroke="#c4df9b" stroke-width="1.8" stroke-linecap="round"/></svg></b><div><strong>Xóm Nhà Lá</strong><span>Bộ đồ nghề của cả xóm</span></div></div><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login để dùng Google Sheets" : "Build chưa có OAuth Client ID"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></header><section class="feature-hero"><small>NHỎ MÀ CÓ VÕ</small><h1>Chuyện gì cũng có tool.</h1></section><section class="feature-grid">${features.map(([id, number, title, description]) => `<button data-do="switch-module" data-module="${id}"><span class="feature-number">${number}</span><i class="feature-symbol" aria-hidden="true">${({ catalog: "▦", export: "▶", upload: "↥", naming: "Aa" })[id]}</i><div><h2>${title}</h2><p>${description}</p></div><b class="feature-enter">Mở tool ↗</b></button>`).join("")}</section><footer class="app-credit">Powered by TiTi</footer></main>`;
+app.innerHTML = `<main class="feature-home"><header><div class="app-logo"><b class="village-logo" aria-label="Logo Xóm Nhà Lá"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 25 24 12l16 13" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 25v14h22V25M22 39V29h7v10" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/><path d="M25 13C25 4 33 3 40 5c0 8-5 13-13 10" fill="currentColor"/><path d="m27 13 8-5" fill="none" stroke="#c4df9b" stroke-width="1.8" stroke-linecap="round"/></svg></b><div><strong>Xóm Nhà Lá</strong><span>Bộ đồ nghề của cả xóm</span></div></div><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login để dùng Google Sheets" : "Build chưa có OAuth Client ID"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></header><section class="feature-hero"><small>NHỎ MÀ CÓ VÕ</small><h1>Chuyện gì cũng có tool.</h1></section><section class="feature-grid">${features.map(([id, number, title, description]) => `<button data-do="switch-module" data-module="${id}"><span class="feature-number">${number}</span><i class="feature-symbol" aria-hidden="true">${({ catalog: "▦", export: "▶", upload: "↥", naming: "Aa", ownership: "⇄" })[id]}</i><div><h2>${title}</h2><p>${description}</p></div><b class="feature-enter">Mở tool ↗</b></button>`).join("")}</section><footer class="app-credit">Powered by TiTi</footer></main>`;
 }
 
 function pageNotice() {
@@ -438,8 +444,8 @@ function renderCatalog() {
   const actions = `<div class="module-actions"><button class="danger-action" data-do="clear-catalog" ${!sheetConfigured || w.busy ? "disabled" : ""}>Clear all data</button><button class="copy-sheet-action" data-do="copy-sheet" ${!w.sheetUrl || w.busy ? "disabled" : ""}>Make a copy ↗</button><button class="primary-action" data-do="create-catalog" ${!catalog || !sheetConfigured || w.busy ? "disabled" : ""}>Create / Update Sheet</button></div>`;
   const preview = catalog
     ? `<div class="catalog-summary"><div><strong>${esc(catalog.rootName)}</strong><span>${catalog.tabs.length} tabs · ${catalog.tabs.reduce((sum, tab) => sum + tab.items.length, 0)} items</span></div>${w.busy ? `<progress max="1" value="${w.progress}"></progress>` : ""}</div><div class="catalog-tabs">${catalog.tabs.map((tab) => `<article><header><div><b>${esc(tab.title)}</b><span>${tab.source === "ui" ? "UI images" : "Animation assets"}</span></div><strong>${tab.items.length}</strong></header><ol>${tab.items.slice(0, 8).map((item) => `<li><span>${esc(item.name)}</span>${item.group ? `<small>${esc(item.group)}</small>` : ""}</li>`).join("")}${tab.items.length > 8 ? `<li class="more">+${tab.items.length - 8} more</li>` : ""}</ol></article>`).join("")}</div>`
-    : `<div class="module-empty"><b>Chưa scan folder local</b><span>Chọn folder gốc chứa *_Animation và *_UI_EN rồi bấm Scan Local.</span></div>`;
-app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${workspaceSettings()}<section class="drive-source"><label><span>Local root folder</span><div><input readonly value="${esc(w.driveUrl)}" placeholder="Chọn folder data hoặc project root..."><button data-do="pick-local-root" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-local" ${!w.driveUrl || w.busy ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan Local"}</button></div></label></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
+    : `<div class="module-empty"><b>Chưa scan folder local</b><span>Chọn folder gốc chứa *_Animation và *_UI_EN rồi bấm Scan.</span></div>`;
+app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${workspaceSettings()}<section class="drive-source"><label><span>Local root folder</span><div><input readonly value="${esc(w.driveUrl)}" placeholder="Chọn folder data hoặc project root..."><button data-do="pick-local-root" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-local" ${!w.driveUrl || w.busy ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan"}</button></div></label></section><section class="workspace-settings catalog-folder-settings"><label><span>Folder Animation</span><input data-workspace="animationFolder" value="${esc(w.animationFolder)}" placeholder="_Animation" ${w.busy ? "disabled" : ""}></label><label><span>Folder UI</span><input data-workspace="uiFolder" value="${esc(w.uiFolder)}" placeholder="_UI_EN" ${w.busy ? "disabled" : ""}></label><p>Nhập tên folder con hoặc phần đuôi tên, ví dụ _Animation khớp 9676_Animation.</p></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
 }
 
 function renderUpload() {
@@ -448,9 +454,14 @@ function renderUpload() {
   const selectedCount = w.uploadRows.filter((row) => row.file).length;
   const canUpload = selectedCount && state.google.signedIn && w.sheetUrl && !w.busy;
   const rows = w.uploadRows.length
-    ? `<div class="upload-head"><span>#</span><span>Animation item</span><span>GIF file</span></div>${w.uploadRows.map((row, index) => `<div class="upload-row ${row.status || ""}" data-upload-index="${index}"><span>${esc(row.index)}</span><div><b>${esc(row.name)}</b><small>${esc(row.sheetName || sheet.selected)} · Row ${row.rowNumber} · Preview C${row.rowNumber}</small></div><button class="file-drop ${row.file ? "has-file" : ""}" data-do="pick-upload-file"><input type="file" accept="image/gif" data-upload-file="${index}"><strong>${row.file ? esc(row.file.name) : "Drop GIF or choose file"}</strong><span>${row.status === "done" ? "Uploaded" : row.status === "uploading" ? "Queued / uploading…" : row.status === "failed" ? "Failed" : row.file ? `✓ Đã chọn GIF · ${Math.round(row.file.size / 1024)} KB · Bấm để đổi` : "GIF only"}</span></button></div>`).join("")}`
+    ? `<div class="upload-head"><span>#</span><span>Animation item</span><span>GIF file</span></div>${w.uploadRows.map((row, index) => `<div class="upload-row ${row.status || ""}" data-upload-index="${index}"><span>${esc(row.index)}</span><div><b>${esc(row.name)}</b><small>${esc(row.sheetName || sheet.selected)} · Row ${row.rowNumber} · Preview C${row.rowNumber}</small></div><button class="file-drop ${row.file ? "has-file" : ""}" data-do="pick-upload-file"><input type="file" accept="image/gif" data-upload-file="${index}"><strong>${row.file ? esc(row.file.name) : "Drop GIF or choose file"}</strong><span>${row.status === "done" ? "Uploaded" : row.status === "uploading" ? "Queued / uploading…" : row.status === "failed" ? "Failed" : row.file ? `✓ Đã chọn GIF · ${Math.round(row.file.size / 1024)} KB · Bấm để đổi` : "GIF only"}</span></button>${row.file ? `<button class="remove-upload-gif" data-do="remove-upload-gif" data-index="${index}" title="Bỏ GIF đã chọn" aria-label="Bỏ GIF đã chọn" ${w.busy ? "disabled" : ""}>×</button>` : ""}</div>`).join("")}`
     : `<div class="module-empty"><b>Chưa có animation rows</b><span>Closure Sheet được cấu hình sẵn trong bản build; bấm Load Sheet để bắt đầu.</span></div>`;
-  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Upload GIF</h1><p>Load animation rows, gắn GIF và upload qua queue tự động.</p></div><button class="primary-action" data-do="upload-all" ${canUpload ? "" : "disabled"}>Upload ${selectedCount || ""} GIF</button></header>${workspaceSettings()}<section class="upload-controls"><button data-do="load-sheet" ${!state.google.signedIn || !w.sheetUrl || w.busy ? "disabled" : ""}>${w.busy ? "Loading…" : "Load Sheet"}</button>${sheet ? `<label><span>Sheet tab</span><select data-role="closure-tab">${sheet.tabs.map((tab) => `<option value="${esc(tab)}" ${sheet.selected === tab ? "selected" : ""}>${esc(tab)}</option>`).join("")}</select></label>` : ""}</section>${sheet ? `<section class="upload-folder-controls"><label class="batch-gif-picker"><span>Folder GIF · tự map theo tên</span><input type="file" webkitdirectory directory multiple data-batch-gifs ${w.busy ? "disabled" : ""}></label></section>` : ""}${pageNotice()}${w.busy ? `<div class="upload-progress"><span style="width:${Math.max(0.02, w.progress) * 100}%"></span></div>` : ""}<section class="upload-list">${rows}</section></main>`;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Upload GIF</h1><p>Load animation rows, gắn GIF và upload qua queue tự động.</p></div><button class="primary-action" data-do="upload-all" ${canUpload ? "" : "disabled"}>Upload ${selectedCount || ""} GIF</button></header>${workspaceSettings()}<section class="upload-controls"><button data-do="load-sheet" ${!state.google.signedIn || !w.sheetUrl || w.busy ? "disabled" : ""}>${w.busy ? "Loading…" : "Load Sheet"}</button></section>${sheet ? `<section class="upload-folder-controls"><label class="batch-gif-picker"><span>Folder GIF · dùng chung GIF output</span><div class="upload-output-path"><input readonly value="${esc(state.output)}" placeholder="Chọn GIF output trong trang Tạo GIF"><button data-do="output" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-upload-output" ${!state.output || w.busy ? "disabled" : ""}>Scan</button></div></label></section>` : ""}${pageNotice()}${w.busy ? `<div class="upload-progress"><span style="width:${Math.max(0.02, w.progress) * 100}%"></span></div>` : ""}<section class="upload-list">${rows}</section></main>`;
+}
+
+function renderOwnership() {
+  const o = state.ownership;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Chuyển owner</h1><p>Chuyển quyền sở hữu Sheet, folder Drive và tất cả file con sang email cùng công ty.</p></div><button class="primary-action" data-do="transfer-owner" ${o.busy || !state.google.signedIn || !o.sheetUrl || !o.driveUrl || !o.email ? "disabled" : ""}>${o.busy ? "Đang chuyển…" : "Chuyển owner"}</button></header><section class="workspace-settings ownership-form">${[["sheetUrl", "Google Sheet", "https://docs.google.com/spreadsheets/d/..."], ["driveUrl", "Folder Drive chứa asset", "https://drive.google.com/drive/folders/..."], ["email", "Email chủ sở hữu mới", "assets@company.com"]].map(([key, label, placeholder]) => `<label><span>${label}</span><input data-owner-field="${key}" type="${key === "email" ? "email" : "text"}" value="${esc(o[key])}" placeholder="${placeholder}" ${o.busy ? "disabled" : ""}></label>`).join("")}</section><section class="catalog-preview">${o.busy ? `<div class="notice">Đang quét folder và chuyển quyền. Giữ app mở đến khi hoàn tất.</div>` : ""}${o.message ? `<div class="notice ok">${esc(o.message)}</div>` : ""}${o.error ? `<div class="notice error">${esc(o.error)}</div>` : ""}${o.results.filter((item) => !item.ok).map((item) => `<div class="notice error">${esc(item.name)}: ${esc(item.error)}</div>`).join("")}</section></main>`;
 }
 
 function renderNaming() {
@@ -464,7 +475,7 @@ function renderExporter() {
     total = state.files.reduce((n, f) => n + f.animations.length, 0),
     visible = visibleFiles();
   app.innerHTML = `${appNav()}<main class="exporter-page"><header class="module-header"><div><h1>Tạo GIF</h1><p>Chọn animation, chỉnh timeframe và xuất GIF cho closure.</p></div><div class="stats"><span><strong>${state.files.length}</strong> Spine</span><span><strong>${total}</strong> anim</span><span><strong>${count}</strong> selected</span></div></header>
-  <section class="toolbar"><label><span>Source folder</span><div><input data-source value="${esc(state.source)}" placeholder="Folder chứa Spine..."><button data-do="source">${icon("folder")}</button></div></label><button class="scan" data-do="scan" ${state.scanning ? "disabled" : ""}>${state.scanning ? "Scanning…" : "Scan Spine"}</button><i></i><label><span>GIF output</span><div><input data-output value="${esc(state.output)}" placeholder="Folder lưu GIF..."><button data-do="output">${icon("folder")}</button></div></label></section>
+  <section class="toolbar"><label><span>Source folder</span><div><input data-source value="${esc(state.source)}" placeholder="Folder chứa Spine..."><button data-do="source">${icon("folder")}</button></div></label><button class="scan" data-do="scan" ${state.scanning ? "disabled" : ""}>${state.scanning ? "Scanning…" : "Scan"}</button><i></i><label><span>GIF output</span><div><input data-output value="${esc(state.output)}" placeholder="Folder lưu GIF..."><button data-do="output">${icon("folder")}</button></div></label></section>
   ${state.error ? `<div class="notice error">${esc(state.error)}</div>` : ""}${state.status ? `<div class="notice ok">${esc(state.status)}</div>` : ""}
   <section class="batch-tools"><label><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input data-search value="${esc(state.search)}" placeholder="Search Spine hoặc animation..."></label><button class="clear-search ${state.search ? "" : "hidden"}" data-do="clear-search">Clear</button><span></span><button class="check-first" data-do="check-first" ${state.files.length ? "" : "disabled"}>Check first <b>${state.files.filter((file) => file.animations.length).length}</b></button><button class="uncheck-all" data-do="uncheck-all" ${count ? "" : "disabled"}>Uncheck all <b>${count || ""}</b></button></section>
   <section class="workspace"><div class="headrow"><span>Spine asset</span><span>Animations · chọn skin và animation để export</span></div><div class="groups">${visible.length ? visible.map(groupView).join("") : emptyView(Boolean(state.search))}</div></section>
@@ -937,7 +948,36 @@ app.addEventListener("click", async (e) => {
     return;
   }
   const a = b.dataset.do;
-  if (a === "open-naming-folder") {
+  if (a === "remove-upload-gif") {
+    if (state.workspace.busy) return;
+    const row = state.workspace.uploadRows[Number(b.dataset.index)];
+    if (row) { row.file = null; row.status = ""; render(); }
+  } else if (a === "scan-upload-output") {
+    const w = state.workspace;
+    w.busy = true; w.error = ""; render();
+    try {
+      const result = await window.spinePreview.scanUploadGifs(state.output);
+      if (!result?.ok) throw new Error(result?.error || "Không đọc được folder GIF output.");
+      const normalize = (name) => clean(String(name).replace(/\.(gif|json|skel|png)$/i, "")).toLowerCase();
+      const files = new Map(); const duplicate = new Set();
+      result.files.forEach((file) => { const key = normalize(file.name); if (files.has(key)) duplicate.add(key); else files.set(key, file); });
+      let matched = 0;
+      w.uploadRows.forEach((row) => { const key = normalize(row.name); if (!duplicate.has(key) && files.has(key)) { row.file = files.get(key); row.status = "ready"; matched += 1; } });
+      w.message = `Tìm thấy ${result.files.length} GIF · đã map ${matched} hàng.${duplicate.size ? ` Bỏ qua ${duplicate.size} tên trùng.` : ""}`;
+    } catch (error) { w.error = error.message; }
+    finally { w.busy = false; render(); }
+  } else if (a === "transfer-owner") {
+    const o = state.ownership;
+    if (o.busy || !window.confirm(`Chuyển quyền sở hữu Sheet và toàn bộ folder asset (bao gồm file con) sang ${o.email}? Thao tác có thể làm thay đổi quyền quản lý của bạn.`)) return;
+    o.busy = true; o.error = ""; o.message = ""; o.results = []; render();
+    try {
+      const result = await window.spinePreview.transferOwnership({ sheetUrl: o.sheetUrl, driveUrl: o.driveUrl, email: o.email });
+      if (!result?.ok) throw new Error(result?.error || "Không chuyển được owner.");
+      o.results = result.results;
+      o.message = `Đã chuyển ${result.done}/${result.total} item sang ${o.email}.`;
+    } catch (error) { o.error = error.message; }
+    finally { o.busy = false; render(); }
+  } else if (a === "open-naming-folder") {
     if (!b.dataset.folder || b.dataset.folder === "undefined") {
       state.naming.error = "Danh sách cũ chưa có đường dẫn Open. Chạy lại Run Check để cập nhật.";
       render();
@@ -980,7 +1020,7 @@ app.addEventListener("click", async (e) => {
     const w = state.workspace;
     w.busy = true; w.error = ""; w.message = "";
     render();
-    const result = await window.spinePreview.scanLocalCatalog(w.driveUrl);
+    const result = await window.spinePreview.scanLocalCatalog(w.driveUrl, { animationFolder: w.animationFolder, uiFolder: w.uiFolder });
     w.busy = false;
     if (result?.ok) { w.catalog = result; w.message = `Đã đọc ${result.tabs.length} tab từ folder local.`; }
     else w.error = result?.error || "Không scan được folder local.";
@@ -1040,7 +1080,7 @@ app.addEventListener("click", async (e) => {
   } else if (a === "load-sheet") {
     const w = state.workspace;
     w.busy = true; w.error = ""; w.message = ""; render();
-    const result = await window.spinePreview.loadClosureSheet(w.sheetUrl, w.sheet?.selected || "");
+    const result = await window.spinePreview.loadClosureSheet(w.sheetUrl, "All animations");
     w.busy = false;
     if (result?.ok) { w.sheet = result; w.uploadRows = result.rows.map((row) => ({ ...row, file: null, status: "" })); w.message = `Đã load ${result.rows.length} items.`; }
     else w.error = result?.error || "Không load được Closure Sheet.";
@@ -1165,6 +1205,11 @@ app.addEventListener("input", (e) => {
 app.addEventListener("change", (e) => {
   const t = e.target,
     row = t.closest(".anim");
+  if (t.dataset.ownerField) {
+    state.ownership[t.dataset.ownerField] = t.value.trim();
+    render();
+    return;
+  }
   if (t.matches("[data-batch-gifs]")) {
     const normalize = (name) => clean(String(name).replace(/\.(gif|json|skel|png)$/i, "")).toLowerCase();
     const selectedFiles = Array.from(t.files || []).filter((file) => /\.gif$/i.test(file.name));

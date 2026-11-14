@@ -1,10 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('spinePreview', {
+  scanUploadGifs: (folder) => ipcRenderer.invoke('scan-upload-gifs', folder),
+  transferOwnership: (payload) => ipcRenderer.invoke('workspace-transfer-owner', payload),
   assetBaseUrl: () => ipcRenderer.invoke('asset-base-url'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   scanFolder: (folderPath) => ipcRenderer.invoke('scan-spine-folder', folderPath),
-  scanLocalCatalog: (folderPath) => ipcRenderer.invoke('scan-local-catalog', folderPath),
+  scanLocalCatalog: (folderPath, options) => ipcRenderer.invoke('scan-local-catalog', folderPath, options),
   scanNamingIssues: (folderPath) => ipcRenderer.invoke('scan-naming-issues', folderPath),
   selectExportFolder: () => ipcRenderer.invoke('select-export-folder'),
   saveBatchGifs: (payload) => ipcRenderer.invoke('save-batch-gifs', payload),

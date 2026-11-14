@@ -14,6 +14,7 @@ const clientConfigured = () =>
   /^[0-9]+-[a-z0-9_-]+\.apps\.googleusercontent\.com$/i.test(CLIENT_ID) &&
   !/^(test|your-|example)/i.test(CLIENT_ID);
 const SCOPES = [
+  "https://www.googleapis.com/auth/drive",
   "openid",
   "email",
   "profile",
@@ -311,7 +312,57 @@ async function clearCatalog() {
   return { cleared: true };
 }
 
+async function transferOwnership(payload) {
+  const sheetId = idFrom(payload.sheetUrl, "sheet");
+  const folderId = idFrom(payload.driveUrl, "folder");
+  const email = String(payload.email || "").trim().toLowerCase();
+  if (!sheetId || !folderId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Nhập đúng link Sheet, folder Drive và email nhận.");
+  const token = await accessToken();
+  const user = await userInfo(token);
+  if (email === user.email?.toLowerCase()) throw new Error("Email nhận đang là tài khoản đăng nhập.");
+  if (email.split("@")[1] !== user.email?.toLowerCase().split("@")[1]) throw new Error("Chỉ chuyển owner sang email cùng domain công ty.");
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const base = "https://www.googleapis.com/drive/v3/files";
+  const folder = await json(`${base}/${folderId}?fields=id,name,mimeType,driveId&supportsAllDrives=true`, { headers });
+  if (folder.mimeType !== "application/vnd.google-apps.folder") throw new Error("Drive path phải là folder.");
+  if (folder.driveId) throw new Error("Shared Drive thuộc tổ chức, không thể chuyển owner cá nhân.");
+  const targets = new Map([[sheetId, { id: sheetId, name: "Closure Sheet" }]]);
+  const visited = new Set();
+  async function visit(item) {
+    if (visited.has(item.id)) return;
+    visited.add(item.id); targets.set(item.id, item);
+    if (item.mimeType !== "application/vnd.google-apps.folder") return;
+    let pageToken = "";
+    do {
+      const params = new URLSearchParams({ q: `'${item.id}' in parents and trashed=false`, fields: "nextPageToken,files(id,name,mimeType)", pageSize: "1000" });
+      if (pageToken) params.set("pageToken", pageToken);
+      const page = await json(`${base}?${params}`, { headers });
+      for (const child of page.files || []) await visit(child);
+      pageToken = page.nextPageToken || "";
+    } while (pageToken);
+  }
+  await visit(folder);
+  const results = [];
+  // Transfer children before parents; do not follow Drive shortcuts.
+  for (const item of Array.from(targets.values()).reverse()) {
+    try {
+      const permissions = await json(`${base}/${item.id}/permissions?fields=permissions(id,emailAddress,role)`, { headers });
+      const existing = permissions.permissions?.find((p) => p.emailAddress?.toLowerCase() === email);
+      if (existing?.role !== "owner") {
+        await json(`${base}/${item.id}/permissions${existing ? `/${existing.id}` : ""}?transferOwnership=true&sendNotificationEmail=true`, {
+          method: existing ? "PATCH" : "POST", headers,
+          body: JSON.stringify(existing ? { role: "owner" } : { type: "user", role: "owner", emailAddress: email }),
+        });
+      }
+      results.push({ name: item.name, ok: true });
+    } catch (error) { results.push({ name: item.name, ok: false, error: error.message }); }
+  }
+  return { results, total: results.length, done: results.filter((item) => item.ok).length };
+}
+
 export function registerGoogleWorkspaceHandlers(ipcMain) {
+  ipcMain.handle("workspace-transfer-owner", wrapTransfer);
+  async function wrapTransfer(_event, payload) { try { return { ok: true, ...await transferOwnership(payload) }; } catch (error) { return { ok: false, error: error.message }; } }
   const wrap = (handler) => async (_event, ...args) => { try { return { ok: true, ...(await handler(...args)) }; } catch (error) { return { ok: false, error: error.message || String(error) }; } };
   ipcMain.handle("workspace-google-status", wrap(status));
   ipcMain.handle("workspace-google-sign-in", wrap(signIn));

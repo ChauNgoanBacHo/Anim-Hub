@@ -151,14 +151,18 @@ function isCatalogImage(entry) {
   return entry.isFile() && /\.(png|jpe?g|webp|gif|bmp)$/i.test(entry.name);
 }
 
-function scanLocalCatalog(rootPath) {
+function scanLocalCatalog(rootPath, options = {}) {
   if (!rootPath || !fs.existsSync(rootPath) || !fs.statSync(rootPath).isDirectory()) {
     throw new Error("Folder local không hợp lệ.");
   }
   const roots = directoryEntries(rootPath).filter((entry) => entry.isDirectory());
-  const animation = roots.find((entry) => /_Animation$/i.test(entry.name));
-  const ui = roots.find((entry) => /_UI_EN$/i.test(entry.name));
-  if (!animation && !ui) throw new Error("Không tìm thấy folder *_Animation hoặc *_UI_EN trong folder đã chọn.");
+  const animationName = String(options.animationFolder || "_Animation").trim();
+  const uiName = String(options.uiFolder || "_UI_EN").trim();
+  const findFolder = (name) => roots.find((entry) => entry.name.toLowerCase() === name.toLowerCase()) || roots.find((entry) => entry.name.toLowerCase().endsWith(name.toLowerCase()));
+  const animation = findFolder(animationName);
+  const ui = findFolder(uiName);
+  if (!animation && !ui) throw new Error(`Không tìm thấy folder Animation (${animationName}) hoặc UI (${uiName}) trong folder gốc.`);
+  if (animation && ui && animation.name === ui.name) throw new Error("Folder Animation và UI phải khác nhau.");
   const tabs = [];
   if (animation) {
     const animationPath = path.join(rootPath, animation.name);
@@ -445,6 +449,23 @@ async function saveBatchGifs(outputDir, files) {
 }
 
 function registerIpcHandlers() {
+  ipcMain.handle("scan-upload-gifs", async (_event, folder) => {
+    try {
+      const files = [];
+      async function visit(dir) {
+        for (const entry of directoryEntries(dir)) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) await visit(full);
+          else if (entry.isFile() && /\.gif$/i.test(entry.name)) {
+            const bytes = await fs.promises.readFile(full);
+            files.push({ name: entry.name, size: bytes.length, type: "image/gif", dataBase64: bytes.toString("base64") });
+          }
+        }
+      }
+      await visit(folder);
+      return { ok: true, files };
+    } catch (error) { return { ok: false, error: error.message }; }
+  });
   ipcMain.handle("asset-base-url", () => assetBaseUrl);
   ipcMain.handle("open-sheet-link", async (_event, url) => {
     const parsed = new URL(url);
@@ -464,8 +485,8 @@ function registerIpcHandlers() {
 
     return filePaths[0];
   });
-  ipcMain.handle("scan-local-catalog", async (_event, rootPath) => {
-    try { return { ok: true, ...scanLocalCatalog(rootPath) }; }
+  ipcMain.handle("scan-local-catalog", async (_event, rootPath, options) => {
+    try { return { ok: true, ...scanLocalCatalog(rootPath, options) }; }
     catch (error) { return { ok: false, error: error.message || String(error) }; }
   });
 

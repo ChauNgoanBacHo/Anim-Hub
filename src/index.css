@@ -1145,6 +1145,34 @@ footer {
 
 .naming-open { justify-self: start; padding: 10px 16px; border: 1px solid #505b6b; border-radius: 9px; background: #303640; color: #bde6ff; font-size: 13px; font-weight: 700; }
 
+.ownership-form { padding: 24px; gap: 24px; background: #202226; border: 1px solid #383b42; border-radius: 18px; }
+.ownership-form label { display: block; min-width: 0; }
+.ownership-form label > span { margin-bottom: 10px; }
+.ownership-form input { display: block; width: 100%; height: 48px; }
+.feature-grid > button:nth-child(5) { --card-accent: #efa8ad; background: #342327; }
+.feature-grid > button:nth-child(5):hover { background: #342327; }
+
+.module-page:has(.sheet-workflow-hint) .sheet-link-field { padding: 22px 24px; border: 1px solid #697b49; border-left: 4px solid #c4df9b; border-radius: 12px; background: #282f21; }
+.sheet-link-field:has(.sheet-workflow-hint) > span { color: #e1f0cc; font-size: 15px; }
+.sheet-link-field .sheet-workflow-hint { margin: 0 0 16px; max-width: none; color: #e4e8dc; font-size: 16px; line-height: 1.8; }
+.sheet-workflow-hint strong { color: #e0ffb4; font-weight: 800; }
+
+.drive-source button[data-do="scan-local"] { background: #c4df9b; border-color: #c4df9b; color: #203020; font-size: 14px; font-weight: 900; }
+
+.upload-output-path { display: flex; gap: 10px; }
+.upload-output-path input { flex: 1; min-width: 0; border: 1px solid #41434b; border-radius: 10px; background: #151619; color: #e7e9ef; }
+.upload-output-path button { padding: 0 20px; border: 1px solid #50545e; border-radius: 10px; background: #30333a; color: #e2e5ec; }
+.upload-output-path button:last-child { background: #c4df9b; color: #203020; border-color: #c4df9b; font-weight: 800; }
+
+.upload-row { position: relative; padding-right: 64px; }
+.upload-head { padding-right: 64px; }
+.remove-upload-gif { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border: 1px solid #74505a; border-radius: 8px; background: #35272d; color: #f0b4bf; font-size: 24px; line-height: 1; }
+.remove-upload-gif:hover { background: #493039; border-color: #c77c8d; }
+
+.catalog-folder-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.catalog-folder-settings p { grid-column: 1 / -1; margin: 0; color: #adb4c0; font-size: 13px; line-height: 1.6; }
+@media (max-width: 680px) { .catalog-folder-settings { grid-template-columns: 1fr; } }
+
 /* The neighborhood toolbox: readable type and four distinct doorways. */
 .feature-hero small { color: #c4df9b; font-size: 12px; letter-spacing: .2em; }
 .feature-hero h1 { font-size: clamp(32px, 3.5vw, 52px); letter-spacing: -.035em; line-height: 1.2; margin: 12px 0 0; color: #f1f2e9; }

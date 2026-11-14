@@ -1017,7 +1017,7 @@ app.addEventListener("click", async (e) => {
     const dialog = document.createElement("dialog");
     dialog.className = "note-dialog";
     const items = n.rows.map((row, index) => ({ row, index })).filter(({row}) => row.fileId === first.fileId);
-    dialog.innerHTML = `<form><h2>${esc(first.name)}</h2><label class="note-form-general">Ghi chú Spine<textarea rows="1" data-general-input>${esc(first.general || "")}</textarea></label><div class="note-form-animations">${items.map(({row,index}) => `<label class="note-form-row"><span>${esc(row.animation)}</span><textarea rows="1" data-anim-input="${index}">${esc(row.note || "")}</textarea></label>`).join("")}</div><div class="note-dialog-error" role="status"></div><div class="module-actions"><button type="button" class="copy-sheet-action" data-close>Đóng</button><button type="submit" class="primary-action">Save</button></div></form>`;
+    dialog.innerHTML = `<form><h2>${esc(first.name)}</h2><label class="note-form-general">Ghi chú Spine<textarea rows="1" data-general-input>${esc(first.general || "")}</textarea></label><div class="note-form-animations">${items.map(({row,index}) => `<label class="note-form-row"><span>${esc(row.animation)}</span><textarea rows="1" data-anim-input="${index}">${esc(row.note || "")}</textarea></label>`).join("")}</div><div class="note-dialog-error" role="status"></div><div class="module-actions"><button type="button" class="copy-sheet-action" data-close>Cancel</button><button type="submit" class="primary-action">Save</button></div></form>`;
     dialog.querySelector("[data-close]").onclick = () => dialog.close();
     dialog.addEventListener("click", (event) => {
       if (event.target !== dialog || n.saving) return;
@@ -1049,7 +1049,7 @@ app.addEventListener("click", async (e) => {
     const general = b.dataset.general === "true";
     const dialog = document.createElement("dialog");
     dialog.className = "note-dialog";
-    dialog.innerHTML = `<form><h2>${esc(row.name)}</h2><p>${general ? "Ghi chú Spine" : esc(row.animation)}</p><textarea rows="1" aria-label="Ghi chú">${esc(general ? row.general : row.note)}</textarea><div class="note-dialog-error" role="status"></div><div class="module-actions"><button type="button" class="copy-sheet-action" data-close>Đóng</button><button type="submit" class="primary-action">Save</button></div></form>`;
+    dialog.innerHTML = `<form><h2>${esc(row.name)}</h2><p>${general ? "Ghi chú Spine" : esc(row.animation)}</p><textarea rows="1" aria-label="Ghi chú">${esc(general ? row.general : row.note)}</textarea><div class="note-dialog-error" role="status"></div><div class="module-actions"><button type="button" class="copy-sheet-action" data-close>Cancel</button><button type="submit" class="primary-action">Save</button></div></form>`;
     document.body.append(dialog); dialog.showModal();
     dialog.querySelector("[data-close]").onclick = () => dialog.close();
     dialog.addEventListener("close", () => dialog.remove());

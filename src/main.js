@@ -137,6 +137,20 @@ function walkAtlasFiles(dir) {
 }
 
 
+function directoryEntries(folderPath) {
+  return fs.readdirSync(folderPath, { withFileTypes: true })
+    .filter((entry) => !entry.name.startsWith("."))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+}
+
+function stripProjectPrefix(name) {
+  return String(name).replace(/^\d+_/, "");
+}
+
+function isCatalogImage(entry) {
+  return entry.isFile() && /\.(png|jpe?g|webp|gif|bmp)$/i.test(entry.name);
+}
+
 function scanLocalCatalog(rootPath) {
   if (!rootPath || !fs.existsSync(rootPath) || !fs.statSync(rootPath).isDirectory()) {
     throw new Error("Folder local không hợp lệ.");

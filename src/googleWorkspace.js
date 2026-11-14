@@ -105,7 +105,7 @@ async function signIn() {
           body: new URLSearchParams({ client_id: CLIENT_ID, ...(CLIENT_SECRET ? { client_secret: CLIENT_SECRET } : {}), code: url.searchParams.get("code") || "", code_verifier: verifier, redirect_uri: redirectUri, grant_type: "authorization_code" }),
         });
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        response.end("<h2>Đăng nhập thành công.</h2><p>Có thể đóng tab và quay lại Closure Studio.</p>");
+        response.end("<h2>Đăng nhập thành công.</h2><p>Có thể đóng tab và quay lại xóm.</p>");
         clearTimeout(timer);
         resolve({ ...result, expires_at: Date.now() + Number(result.expires_in || 3600) * 1000 });
       } catch (error) {

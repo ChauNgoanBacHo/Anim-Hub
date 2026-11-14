@@ -1297,7 +1297,7 @@ footer {
 .notes-games-field > span { font-size: 12px; font-weight: 800; color: #aeb1ba; letter-spacing: .05em; text-transform: uppercase; }
 .notes-game-button { padding: 10px 20px; border: 1px solid #65727e; border-radius: 8px; background: transparent; color: #d8e2ed; font-size: 15px; font-weight: 600; }
 .notes-game-button.selected { border-color: #79d6c7; color: #b7fff1; background: #1c3834; }
-button[data-do="notes-scan"] { background: #67cbbb; border-color: #67cbbb; color: #102e29; font-weight: 800; }
+button[data-do="notes-scan"] { background: #c4df9b; border-color: #c4df9b; color: #203020; font-weight: 900; }
 
 .notes-new-game { padding: 22px; border: 1px solid #3f4651; border-radius: 14px; background: #1c1f24; gap: 20px; }
 .notes-new-game-heading h2 { margin: 0 0 8px; font-size: 18px; color: #e7ebf1; }

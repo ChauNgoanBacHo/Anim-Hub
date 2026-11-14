@@ -1476,12 +1476,22 @@ window.addEventListener("resize", () => {
     state.stage.renderOnce();
   }
 });
-render();
+// Keep the static splash visible while the workspace session initializes.
+let bootFinished = false;
+const bootStartedAt = Date.now();
+const finishBoot = () => {
+  const remaining = 2500 - (Date.now() - bootStartedAt);
+  if (remaining > 0) { setTimeout(finishBoot, remaining); return; }
+  if (!bootFinished) { bootFinished = true; render(); }
+};
+const bootTimeout = setTimeout(finishBoot, 6000);
 window.spinePreview.googleStatus().then((result) => {
   state.google.configured = Boolean(result?.configured);
   state.google.signedIn = Boolean(result?.signedIn);
   state.google.user = result?.user || null;
   state.workspace.sheetUrl = result?.workspace?.sheetUrl || "";
   state.notes.sheetUrl = result?.workspace?.notesSheetUrl || "";
-  render();
-});
+  if (bootFinished) render();
+}).catch(() => {
+  // Offline users can still export GIFs and check local asset names.
+}).finally(() => { clearTimeout(bootTimeout); finishBoot(); });

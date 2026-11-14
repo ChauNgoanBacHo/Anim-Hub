@@ -9,6 +9,7 @@ const CLIENT_SECRET = __GOOGLE_OAUTH_CLIENT_SECRET__;
 const WORKSPACE_DOMAIN = __GOOGLE_WORKSPACE_DOMAIN__;
 const CLOSURE_SHEET_URL = __CLOSURE_SHEET_URL__;
 const QUEUE_SHEET = "_ClosureUploadQueue";
+const NOTES_SHEET_URL = __ANIMATION_NOTES_SHEET_URL__;
 const QUEUE_CHUNK_SIZE = 35_000;
 const clientConfigured = () =>
   /^[0-9]+-[a-z0-9_-]+\.apps\.googleusercontent\.com$/i.test(CLIENT_ID) &&
@@ -44,7 +45,7 @@ function decrypt(record) {
 }
 function base64Url(value) { return Buffer.from(value).toString("base64url"); }
 async function json(url, options = {}) {
-  const response = await fetch(url, options);
+  const response = await fetch(url, { ...options, signal: options.signal || AbortSignal.timeout(60000) });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body?.error?.message || body?.error_description || `Google API ${response.status}`);
   return body;
@@ -75,6 +76,7 @@ async function status() {
     signedIn: false,
     user: store.user || null,
     workspace: {
+      notesSheetUrl: NOTES_SHEET_URL,
       sheetUrl: CLOSURE_SHEET_URL,
     },
   };
@@ -360,7 +362,95 @@ async function transferOwnership(payload) {
   return { results, total: results.length, done: results.filter((item) => item.ok).length };
 }
 
+async function animationNotes(action, payload, onProgress = () => {}) {
+  const token = await accessToken();
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const spreadsheetId = idFrom(NOTES_SHEET_URL, "sheet");
+  if (!spreadsheetId) throw new Error("Chưa cấu hình ANIMATION_NOTES_SHEET_URL trong env.");
+  if (action === "games") {
+    const database = await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`, { headers });
+    return { games: (database.sheets || []).map((s) => s.properties.title).filter((title) => /^\d+$/.test(title)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) };
+  }
+  const gameId = String(payload.gameId || "").trim();
+  if (!/^\d+$/.test(gameId)) throw new Error("Game ID chỉ gồm chữ số.");
+  const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
+  const range = encodeURIComponent(`${quoted(gameId)}!A:H`);
+  const metadata = await json(`${base}?fields=sheets.properties`, { headers });
+  const tab = metadata.sheets?.find((s) => s.properties.title === gameId);
+  let stored = [];
+  if (tab) {
+    const data = await json(`${base}/values/${range}`, { headers });
+    stored = (data.values || []).slice(1).filter((r) => r[0]).map((r) => ({ fileId: r[0], name: r[1] || "", animation: r[2] || "", note: r[3] || "", general: r[4] || "", status: r[5] || "active", folder: r[6] || "" }));
+  }
+  if (action === "load") return { rows: stored };
+  let rows;
+  if (action === "scan") {
+    const folderId = idFrom(payload.driveUrl, "folder");
+    if (!folderId) throw new Error("Nhập link hoặc ID folder Drive hợp lệ.");
+    const fresh = []; const visited = new Set();
+    let filesRead = 0;
+    async function visit(id, folder) {
+      if (visited.has(id)) return; visited.add(id);
+      onProgress(`Đang quét ${folder || "folder gốc"} · ${visited.size} folder · ${filesRead} file Spine · ${fresh.length} anim`);
+      let pageToken = "";
+      do {
+        const params = new URLSearchParams({ q: `'${id}' in parents and trashed=false`, fields: "nextPageToken,files(id,name,mimeType)", pageSize: "1000", supportsAllDrives: "true", includeItemsFromAllDrives: "true" });
+        if (pageToken) params.set("pageToken", pageToken);
+        const page = await json(`https://www.googleapis.com/drive/v3/files?${params}`, { headers });
+        for (const file of page.files || []) {
+          if (file.mimeType === "application/vnd.google-apps.folder") await visit(file.id, `${folder}/${file.name}`);
+          else if (/\.json$/i.test(file.name) && !/\.meta$/i.test(file.name)) {
+            onProgress(`Đang đọc ${file.name} · ${visited.size} folder · ${filesRead} file Spine · ${fresh.length} anim`);
+            const data = await json(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media&supportsAllDrives=true`, { headers, signal: AbortSignal.timeout(60000) });
+            if (!data.skeleton || !data.animations) continue;
+            filesRead += 1;
+            for (const animation of Object.keys(data.animations)) fresh.push({ fileId: file.id, name: file.name.replace(/\.json$/i, ""), animation, folder, status: "active" });
+          }
+        }
+        pageToken = page.nextPageToken || "";
+      } while (pageToken);
+    }
+    await visit(folderId, "");
+    const key = (r) => `${r.fileId}\n${r.animation}`;
+    const old = new Map(stored.map((r) => [key(r), r]));
+    const seen = new Set(fresh.map(key));
+    rows = fresh.map((r) => ({ ...old.get(key(r)), ...r, note: old.get(key(r))?.note || "", general: old.get(key(r))?.general || "" }));
+    rows.push(...stored.filter((r) => !seen.has(key(r))).map((r) => ({ ...r, status: "missing" })));
+    rows.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }) || a.animation.localeCompare(b.animation));
+    return animationNotes("save", { gameId, rows });
+  }
+  if (action === "save-spine") {
+    const edits = new Map((payload.rows || []).filter((row) => row.fileId === payload.fileId).map((row) => [row.animation, row]));
+    if (!stored.some((row) => row.fileId === payload.fileId)) throw new Error("Không tìm thấy Spine trên database. Load hoặc Scan lại.");
+    const rows = stored.map((row) => {
+      const edit = row.fileId === payload.fileId ? edits.get(row.animation) : null;
+      return edit ? { ...row, note: String(edit.note || ""), general: String(edit.general || "") } : row;
+    });
+    return animationNotes("save", { gameId, rows });
+  }
+  if (action === "save-note") {
+    let changed = false;
+    const updated = stored.map((row) => {
+      if (row.fileId !== payload.fileId || (!payload.general && row.animation !== payload.animation)) return row;
+      changed = true;
+      return { ...row, [payload.general ? "general" : "note"]: String(payload.text || "") };
+    });
+    if (!changed) throw new Error("Không tìm thấy animation trên database. Scan hoặc Load lại game.");
+    return animationNotes("save", { gameId, rows: updated });
+  }
+  if (action !== "save") throw new Error("Notes action không hợp lệ.");
+  const edits = new Map((payload.rows || []).map((r) => [`${r.fileId}\n${r.animation}`, r]));
+  rows = stored.map((r) => edits.get(`${r.fileId}\n${r.animation}`) || r);
+  const keys = new Set(rows.map((r) => `${r.fileId}\n${r.animation}`));
+  rows.push(...Array.from(edits.values()).filter((r) => !keys.has(`${r.fileId}\n${r.animation}`)));
+  if (!tab) await json(`${base}:batchUpdate`, { method: "POST", headers, body: JSON.stringify({ requests: [{ addSheet: { properties: { title: gameId, gridProperties: { frozenRowCount: 1 } } } }] }) });
+  const values = [["Drive file ID", "Spine", "Animation", "Hướng dẫn gọi", "Ghi chú Spine", "Status", "Folder", "Updated at"], ...rows.map((r) => [r.fileId, r.name, r.animation, r.note || "", r.general || "", r.status || "active", r.folder || "", new Date().toISOString()])];
+  await json(`${base}/values/${encodeURIComponent(`${quoted(gameId)}!A1`)}?valueInputOption=RAW`, { method: "PUT", headers, body: JSON.stringify({ values }) });
+  return { rows };
+}
+
 export function registerGoogleWorkspaceHandlers(ipcMain) {
+  ipcMain.handle("animation-notes", async (event, action, payload) => { try { return { ok: true, ...await animationNotes(action, payload, (message) => { if (!event.sender.isDestroyed()) event.sender.send("animation-notes-progress", message); }) }; } catch (error) { return { ok: false, error: error.message }; } });
   ipcMain.handle("workspace-transfer-owner", wrapTransfer);
   async function wrapTransfer(_event, payload) { try { return { ok: true, ...await transferOwnership(payload) }; } catch (error) { return { ok: false, error: error.message }; } }
   const wrap = (handler) => async (_event, ...args) => { try { return { ok: true, ...(await handler(...args)) }; } catch (error) { return { ok: false, error: error.message || String(error) }; } };

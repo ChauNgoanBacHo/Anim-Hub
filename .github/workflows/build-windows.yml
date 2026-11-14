@@ -28,6 +28,7 @@ jobs:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           GOOGLE_WORKSPACE_DOMAIN: ${{ vars.GOOGLE_WORKSPACE_DOMAIN }}
           CLOSURE_SHEET_URL: ${{ vars.CLOSURE_SHEET_URL }}
+          ANIMATION_NOTES_SHEET_URL: ${{ vars.ANIMATION_NOTES_SHEET_URL }}
 
       - uses: actions/upload-artifact@v4
         with:

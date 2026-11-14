@@ -40,6 +40,7 @@ const state = {
   error: "",
   search: "",
   module: "home",
+  notes: { driveUrl: "", gameId: "", rows: [], busy: false, message: "", error: "", sheetUrl: "", dirty: false, games: [], initialized: false, saving: false, revision: 0, onlyNoted: false },
   ownership: { sheetUrl: "", driveUrl: "", email: "", busy: false, message: "", error: "", results: [] },
   google: { configured: false, signedIn: false, user: null, busy: false },
   workspace: {
@@ -417,6 +418,7 @@ function render() {
   if (state.module === "export") return renderExporter();
   if (state.module === "upload") return renderUpload();
   if (state.module === "naming") return renderNaming();
+  if (state.module === "notes") return renderAnimationNotes();
   if (state.module === "ownership") return renderOwnership();
   return renderCatalog();
 }
@@ -428,8 +430,9 @@ function renderHome() {
     ["upload", "03", "Upload GIF", "Load Sheet, drag GIF vào từng row và upload."],
     ["ownership", "04", "Chuyển owner", "Bàn giao Sheet và folder asset cho tài khoản quản lý."],
     ["naming", "05", "Cảnh sát chính tả", "Kiểm tra folder, file và animation name trước handoff."],
+    ["notes", "06", "Sổ tay animation", "Ghi cách gọi animation để dev tra cứu và implement nhanh hơn."],
   ];
-app.innerHTML = `<main class="feature-home"><header><div class="app-logo"><b class="village-logo" aria-label="Logo Xóm Nhà Lá"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 25 24 12l16 13" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 25v14h22V25M22 39V29h7v10" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/><path d="M25 13C25 4 33 3 40 5c0 8-5 13-13 10" fill="currentColor"/><path d="m27 13 8-5" fill="none" stroke="#c4df9b" stroke-width="1.8" stroke-linecap="round"/></svg></b><div><strong>Xóm Nhà Lá</strong><span>Bộ đồ nghề của cả xóm</span></div></div><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login để dùng Google Sheets" : "Build chưa có OAuth Client ID"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></header><section class="feature-hero"><small>NHỎ MÀ CÓ VÕ</small><h1>Chuyện gì cũng có tool.</h1></section><section class="feature-grid">${features.map(([id, number, title, description]) => `<button data-do="switch-module" data-module="${id}"><span class="feature-number">${number}</span><i class="feature-symbol" aria-hidden="true">${({ catalog: "▦", export: "▶", upload: "↥", naming: "Aa", ownership: "⇄" })[id]}</i><div><h2>${title}</h2><p>${description}</p></div><b class="feature-enter">Mở tool ↗</b></button>`).join("")}</section><footer class="app-credit">Powered by TiTi</footer></main>`;
+app.innerHTML = `<main class="feature-home"><header><div class="app-logo"><b class="village-logo" aria-label="Logo Xóm Nhà Lá"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 25 24 12l16 13" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 25v14h22V25M22 39V29h7v10" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/><path d="M25 13C25 4 33 3 40 5c0 8-5 13-13 10" fill="currentColor"/><path d="m27 13 8-5" fill="none" stroke="#c4df9b" stroke-width="1.8" stroke-linecap="round"/></svg></b><div><strong>Xóm Nhà Lá</strong><span>Bộ đồ nghề của cả xóm</span></div></div><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login để dùng Google Sheets" : "Build chưa có OAuth Client ID"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></header><section class="feature-hero"><small>NHỎ MÀ CÓ VÕ</small><h1>Chuyện gì cũng có tool.</h1></section><section class="feature-columns">${[["Closure", "Tạo tài liệu và hoàn tất bàn giao", features.slice(0, 4)], ["Handoff", "Kiểm tra asset và hướng dẫn implement", features.slice(4)]].map(([group, subtitle, items]) => `<section class="feature-category"><div class="feature-category-title"><h2>${group}</h2><p>${subtitle}</p></div><div class="feature-grid">${items.map(([id, number, title, description]) => `<button data-do="switch-module" data-module="${id}"><span class="feature-number">${number}</span><i class="feature-symbol" aria-hidden="true">${({ catalog: "▦", export: "▶", upload: "↥", naming: "Aa", ownership: "⇄", notes: "≡" })[id]}</i><div><h2>${title}</h2><p>${description}</p></div></button>`).join("")}</div></section>`).join("")}</section><footer class="app-credit">Powered by TiTi</footer></main>`;
 }
 
 function pageNotice() {
@@ -457,6 +460,38 @@ function renderUpload() {
     ? `<div class="upload-head"><span>#</span><span>Animation item</span><span>GIF file</span></div>${w.uploadRows.map((row, index) => `<div class="upload-row ${row.status || ""}" data-upload-index="${index}"><span>${esc(row.index)}</span><div><b>${esc(row.name)}</b><small>${esc(row.sheetName || sheet.selected)} · Row ${row.rowNumber} · Preview C${row.rowNumber}</small></div><button class="file-drop ${row.file ? "has-file" : ""}" data-do="pick-upload-file"><input type="file" accept="image/gif" data-upload-file="${index}"><strong>${row.file ? esc(row.file.name) : "Drop GIF or choose file"}</strong><span>${row.status === "done" ? "Uploaded" : row.status === "uploading" ? "Queued / uploading…" : row.status === "failed" ? "Failed" : row.file ? `✓ Đã chọn GIF · ${Math.round(row.file.size / 1024)} KB · Bấm để đổi` : "GIF only"}</span></button>${row.file ? `<button class="remove-upload-gif" data-do="remove-upload-gif" data-index="${index}" title="Bỏ GIF đã chọn" aria-label="Bỏ GIF đã chọn" ${w.busy ? "disabled" : ""}>×</button>` : ""}</div>`).join("")}`
     : `<div class="module-empty"><b>Chưa có animation rows</b><span>Closure Sheet được cấu hình sẵn trong bản build; bấm Load Sheet để bắt đầu.</span></div>`;
   app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Upload GIF</h1><p>Load animation rows, gắn GIF và upload qua queue tự động.</p></div><button class="primary-action" data-do="upload-all" ${canUpload ? "" : "disabled"}>Upload ${selectedCount || ""} GIF</button></header>${workspaceSettings()}<section class="upload-controls"><button data-do="load-sheet" ${!state.google.signedIn || !w.sheetUrl || w.busy ? "disabled" : ""}>${w.busy ? "Loading…" : "Load Sheet"}</button></section>${sheet ? `<section class="upload-folder-controls"><label class="batch-gif-picker"><span>Folder GIF · dùng chung GIF output</span><div class="upload-output-path"><input readonly value="${esc(state.output)}" placeholder="Chọn GIF output trong trang Tạo GIF"><button data-do="output" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-upload-output" ${!state.output || w.busy ? "disabled" : ""}>Scan</button></div></label></section>` : ""}${pageNotice()}${w.busy ? `<div class="upload-progress"><span style="width:${Math.max(0.02, w.progress) * 100}%"></span></div>` : ""}<section class="upload-list">${rows}</section></main>`;
+}
+
+app.addEventListener("input", (event) => {
+  const t = event.target;
+  if (t.dataset.noteIndex !== undefined) { state.notes.rows[Number(t.dataset.noteIndex)].note = t.value; state.notes.dirty = true; }
+  if (t.dataset.noteGeneral) { state.notes.rows.filter((row) => row.fileId === t.dataset.noteGeneral).forEach((row) => { row.general = t.value; }); state.notes.dirty = true; }
+  if (t.dataset.noteIndex !== undefined || t.dataset.noteGeneral) state.notes.revision += 1;
+});
+
+async function loadNotesGames() {
+  const n = state.notes;
+  n.initialized = true; n.busy = true;
+  try {
+    const result = await window.spinePreview.animationNotes("games", {});
+    if (!result?.ok) throw new Error(result?.error || "Không load được database.");
+    n.games = result.games;
+  } catch (error) { n.error = error.message; }
+  finally { n.busy = false; if (state.module === "notes") render(); }
+}
+
+window.spinePreview.onAnimationNotesProgress?.((message) => {
+  const progress = app.querySelector("[data-notes-progress]");
+  if (progress) progress.textContent = message;
+});
+
+function renderAnimationNotes() {
+  const n = state.notes;
+  if (!n.initialized && state.google.signedIn) loadNotesGames();
+  const notesDatabaseLink = /^https:\/\/docs\.google\.com\/spreadsheets\//.test(n.sheetUrl) ? `<section class="workspace-settings"><div class="sheet-link-field"><span>Sheet database gốc</span><a class="closure-sheet-link" href="${esc(n.sheetUrl)}" target="_blank" rel="noopener noreferrer">${esc(n.sheetUrl)} <b aria-hidden="true">↗</b></a></div></section>` : "";
+  const groups = new Map();
+  n.rows.forEach((row, index) => { if (!groups.has(row.fileId)) groups.set(row.fileId, []); groups.get(row.fileId).push({ row, index }); });
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Sổ tay animation</h1><p>Hướng dẫn gọi animation cho dev · mỗi game một tab database.</p></div></header>${notesDatabaseLink}<section class="workspace-settings notes-new-game"><div class="notes-new-game-heading"><h2>Tạo game mới / cập nhật asset</h2><p>Nhập folder Drive và game ID để tạo tab mới hoặc cập nhật danh sách animation cho game đã có.</p></div><label><span>Folder Drive</span><input data-notes-field="driveUrl" value="${esc(n.driveUrl)}" ${n.busy ? "disabled" : ""}></label><label><span>Game ID · tên tab</span><input data-notes-field="gameId" value="${esc(n.gameId)}" ${n.busy ? "disabled" : ""}></label><div class="module-actions"><button class="copy-sheet-action" data-do="notes-scan" ${n.busy || !n.driveUrl || !n.gameId || !state.google.signedIn ? "disabled" : ""}>Scan</button></div></section><section class="workspace-settings notes-database-controls"><div class="notes-games-field"><span>Game có sẵn trên database</span><div class="notes-game-list">${n.games.map((id) => `<button class="notes-game-button ${id === n.gameId ? "selected" : ""}" data-do="choose-notes-game" data-game="${esc(id)}" ${n.busy || n.saving ? "disabled" : ""}>${esc(id)}</button>`).join("")}</div></div></section><section class="catalog-preview">${n.busy ? `<div class="notice" data-notes-progress>Đang xử lý…</div>` : ""}${n.error ? `<div class="notice error">${esc(n.error)}</div>` : ""}<div class="notes-spine-list">${Array.from(groups.values()).map((items) => { const noted = items.filter(({row}) => row.note?.trim()); const general = items[0].row.general?.trim(); return `<button class="note-chip spine-note-button ${noted.length || general ? "noted" : ""}" data-do="open-spine-notes" data-index="${items[0].index}"><strong>${esc(items[0].row.name)}</strong>${noted.length || general ? `<span class="note-popover">${general ? `<span class="note-preview-line"><b>Ghi chú Spine</b><span>${esc(general)}</span></span>` : ""}${noted.map(({row}) => `<span class="note-preview-line"><b>${esc(row.animation)}</b><span>${esc(row.note)}</span></span>`).join("")}</span>` : ""}</button>`; }).join("")}</div></section></main>`;
 }
 
 function renderOwnership() {
@@ -948,7 +983,87 @@ app.addEventListener("click", async (e) => {
     return;
   }
   const a = b.dataset.do;
-  if (a === "remove-upload-gif") {
+  if (a === "choose-notes-game") {
+    const n = state.notes;
+    if (n.busy || n.saving) return;
+    n.gameId = b.dataset.game; n.rows = []; n.busy = true; n.error = ""; n.message = ""; render();
+    try {
+      const result = await window.spinePreview.animationNotes("load", { gameId: n.gameId });
+      if (!result?.ok) throw new Error(result?.error || "Không load được game.");
+      n.rows = result.rows;
+    } catch (error) { n.error = error.message; }
+    finally { n.busy = false; render(); }
+  } else if (a === "open-spine-notes") {
+    const n = state.notes;
+    const first = n.rows[Number(b.dataset.index)];
+    if (!first) return;
+    const dialog = document.createElement("dialog");
+    dialog.className = "note-dialog";
+    const items = n.rows.map((row, index) => ({ row, index })).filter(({row}) => row.fileId === first.fileId);
+    dialog.innerHTML = `<form><h2>${esc(first.name)}</h2><label class="note-form-general">Ghi chú Spine<textarea rows="1" data-general-input>${esc(first.general || "")}</textarea></label><div class="note-form-animations">${items.map(({row,index}) => `<label class="note-form-row"><span>${esc(row.animation)}</span><textarea rows="1" data-anim-input="${index}">${esc(row.note || "")}</textarea></label>`).join("")}</div><div class="note-dialog-error" role="status"></div><div class="module-actions"><button type="button" class="copy-sheet-action" data-close>Đóng</button><button type="submit" class="primary-action">Save</button></div></form>`;
+    dialog.querySelector("[data-close]").onclick = () => dialog.close();
+    dialog.addEventListener("click", (event) => {
+      if (event.target !== dialog || n.saving) return;
+      const bounds = dialog.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
+    });
+    dialog.addEventListener("cancel", (event) => { if (n.saving) event.preventDefault(); });
+    dialog.addEventListener("close", () => dialog.remove());
+    dialog.querySelector("form").onsubmit = async (event) => {
+      event.preventDefault();
+      if (n.saving) return;
+      n.saving = true;
+      dialog.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+      const general = dialog.querySelector("[data-general-input]").value;
+      const rows = items.map(({row,index}) => ({ ...row, general, note: dialog.querySelector(`[data-anim-input="${index}"]`).value }));
+      try {
+        const result = await window.spinePreview.animationNotes("save-spine", { gameId: n.gameId, fileId: first.fileId, rows });
+        if (!result?.ok) throw new Error(result?.error === "Notes action không hợp lệ." ? "Phần lưu đang chạy phiên app cũ. Đóng app và chạy lại npm start để cập nhật." : result?.error || "Không lưu được ghi chú.");
+        rows.forEach((edited) => { const target = n.rows.find((row) => row.fileId === edited.fileId && row.animation === edited.animation); if (target) Object.assign(target, edited); });
+        n.message = ""; dialog.close(); render();
+      } catch (error) { dialog.querySelector(".note-dialog-error").textContent = error.message; }
+      finally { n.saving = false; dialog.querySelectorAll("button").forEach((button) => { button.disabled = false; }); }
+    };
+    document.body.append(dialog); dialog.showModal();
+  } else if (a === "edit-note") {
+    const n = state.notes;
+    const row = n.rows[Number(b.dataset.index)];
+    if (!row || n.busy || n.saving) return;
+    const general = b.dataset.general === "true";
+    const dialog = document.createElement("dialog");
+    dialog.className = "note-dialog";
+    dialog.innerHTML = `<form><h2>${esc(row.name)}</h2><p>${general ? "Ghi chú Spine" : esc(row.animation)}</p><textarea rows="1" aria-label="Ghi chú">${esc(general ? row.general : row.note)}</textarea><div class="note-dialog-error" role="status"></div><div class="module-actions"><button type="button" class="copy-sheet-action" data-close>Đóng</button><button type="submit" class="primary-action">Save</button></div></form>`;
+    document.body.append(dialog); dialog.showModal();
+    dialog.querySelector("[data-close]").onclick = () => dialog.close();
+    dialog.addEventListener("close", () => dialog.remove());
+    dialog.querySelector("form").onsubmit = async (event) => {
+      event.preventDefault(); n.saving = true;
+      const text = dialog.querySelector("textarea").value;
+      dialog.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+      try {
+        const result = await window.spinePreview.animationNotes("save-note", { gameId: n.gameId, fileId: row.fileId, animation: row.animation, general, text });
+        if (!result?.ok) throw new Error(result?.error || "Không lưu được ghi chú.");
+        if (general) n.rows.filter((item) => item.fileId === row.fileId).forEach((item) => { item.general = text; });
+        else row.note = text;
+        n.dirty = false; n.message = ""; dialog.close(); render();
+      } catch (error) { dialog.querySelector(".note-dialog-error").textContent = error.message; }
+      finally { n.saving = false; dialog.querySelectorAll("button").forEach((button) => { button.disabled = false; }); }
+    };
+  } else if (a?.startsWith("notes-")) {
+    const n = state.notes;
+    if (n.busy || n.saving) return;
+    const action = a.slice(6);
+    if (action !== "save" && n.dirty && !window.confirm("Ghi chú chưa lưu. Tiếp tục sẽ bỏ thay đổi hiện tại?")) return;
+    n.busy = true; n.error = ""; n.message = ""; render();
+    try {
+      const result = await window.spinePreview.animationNotes(action, { driveUrl: n.driveUrl, gameId: n.gameId, rows: n.rows });
+      if (!result?.ok) throw new Error(result?.error || "Không xử lý được ghi chú.");
+      n.rows = result.rows; n.dirty = false;
+      if (action === "save" && !n.games.includes(n.gameId)) n.games.push(n.gameId);
+      n.message = action === "scan" ? `Đã cập nhật ${n.rows.length} anim vào tab ${n.gameId}, giữ nguyên ghi chú cũ.` : `Đã load ${n.rows.length} anim.`;
+    } catch (error) { n.error = error.message; }
+    finally { n.busy = false; render(); }
+  } else if (a === "remove-upload-gif") {
     if (state.workspace.busy) return;
     const row = state.workspace.uploadRows[Number(b.dataset.index)];
     if (row) { row.file = null; row.status = ""; render(); }
@@ -1205,6 +1320,24 @@ app.addEventListener("input", (e) => {
 app.addEventListener("change", (e) => {
   const t = e.target,
     row = t.closest(".anim");
+  if (t.matches("[data-notes-filter]")) { state.notes.onlyNoted = t.checked; render(); return; }
+  if (t.matches("[data-notes-game]")) {
+    const n = state.notes;
+    if (n.busy || n.saving || !t.value) return;
+    if (n.dirty) { n.error = "Chờ auto-save hoặc bấm Lưu trước khi đổi game."; render(); return; }
+    n.gameId = t.value; n.busy = true; n.error = ""; render();
+    window.spinePreview.animationNotes("load", { gameId: n.gameId }).then((result) => {
+      if (!result?.ok) throw new Error(result?.error || "Không load được game.");
+      n.rows = result.rows; n.message = `Đã load game ${n.gameId}.`;
+    }).catch((error) => { n.error = error.message; }).finally(() => { n.busy = false; render(); });
+    return;
+  }
+  if (t.dataset.notesField) {
+    if (state.notes.dirty || state.notes.saving) { state.notes.error = "Lưu ghi chú trước khi đổi game hoặc folder."; render(); return; }
+    if (t.dataset.notesField === "gameId" && state.notes.gameId !== t.value.trim()) state.notes.rows = [];
+    state.notes[t.dataset.notesField] = t.value.trim();
+    render(); return;
+  }
   if (t.dataset.ownerField) {
     state.ownership[t.dataset.ownerField] = t.value.trim();
     render();
@@ -1332,5 +1465,6 @@ window.spinePreview.googleStatus().then((result) => {
   state.google.signedIn = Boolean(result?.signedIn);
   state.google.user = result?.user || null;
   state.workspace.sheetUrl = result?.workspace?.sheetUrl || "";
+  state.notes.sheetUrl = result?.workspace?.notesSheetUrl || "";
   render();
 });

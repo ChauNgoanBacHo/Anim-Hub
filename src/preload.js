@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('spinePreview', {
+  animationNotes: (action, payload) => ipcRenderer.invoke('animation-notes', action, payload),
+  onAnimationNotesProgress: (callback) => {
+    const listener = (_event, message) => callback(message);
+    ipcRenderer.on('animation-notes-progress', listener);
+    return () => ipcRenderer.removeListener('animation-notes-progress', listener);
+  },
   scanUploadGifs: (folder) => ipcRenderer.invoke('scan-upload-gifs', folder),
   transferOwnership: (payload) => ipcRenderer.invoke('workspace-transfer-owner', payload),
   assetBaseUrl: () => ipcRenderer.invoke('asset-base-url'),

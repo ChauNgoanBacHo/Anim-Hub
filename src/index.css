@@ -1310,6 +1310,11 @@ button[data-do="notes-scan"] { background: #c4df9b; border-color: #c4df9b; color
 .feature-login-notice strong { color: #e4f6f5; font-size: 16px; }.feature-login-notice p { margin: 7px 0 0; color: #c3d2d8; font-size: 14px; line-height: 1.6; }.feature-login-notice button { flex-shrink: 0; }
 @media(max-width:680px) { .feature-login-notice { align-items: flex-start; flex-direction: column; gap: 14px; } }
 
+.feature-columns .feature-grid > button { transition: border-color .16s ease, box-shadow .16s ease; }
+.feature-columns .feature-grid > button:hover { border-color: var(--card-accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--card-accent) 25%, transparent), inset 0 0 100px #ffffff06; transform: none; }
+.feature-columns .feature-grid > button:hover .feature-symbol { background: color-mix(in srgb, var(--card-accent) 14%, transparent); border-color: var(--card-accent); }
+@media(prefers-reduced-motion: reduce) { .feature-columns .feature-grid > button { transition: none; } }
+
 /* The neighborhood toolbox: readable type and four distinct doorways. */
 .feature-hero small { color: #c4df9b; font-size: 12px; letter-spacing: .2em; }
 .feature-hero h1 { font-size: clamp(32px, 3.5vw, 52px); letter-spacing: -.035em; line-height: 1.2; margin: 12px 0 0; color: #f1f2e9; }

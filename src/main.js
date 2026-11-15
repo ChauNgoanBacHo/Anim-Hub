@@ -202,7 +202,6 @@ function namingSuggestion(name, keepExtension = false, animation = false) {
 
 function namingReasons(name, animation = false) {
   const reasons = [];
-  if (!animation && /\p{Lu}/u.test(name)) reasons.push("Tên file/folder chứa chữ in hoa");
   if (name !== name.trim()) reasons.push("Dư khoảng trắng đầu/cuối");
   if (/\s/.test(name)) reasons.push("Có khoảng trắng");
   if (animation && /^[^\p{L}\p{N}_\s]/u.test(name)) reasons.push("Tên animation bắt đầu bằng ký tự đặc biệt, không tương thích config");

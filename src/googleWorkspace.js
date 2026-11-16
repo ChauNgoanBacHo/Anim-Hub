@@ -469,7 +469,8 @@ async function clearCatalog() {
   return { cleared: true };
 }
 
-async function transferOwnership(payload) {
+const ownerTransfers = new Map();
+async function transferOwnership(payload, control) {
   const sheetId = idFrom(payload.sheetUrl, "sheet");
   const folderId = idFrom(payload.driveUrl, "folder");
   const email = String(payload.email || "").trim().toLowerCase();
@@ -489,11 +490,13 @@ async function transferOwnership(payload) {
   const targets = new Map();
   const visited = new Set();
   async function visit(item) {
+    if (control.cancelled) return;
     if (visited.has(item.id)) return;
     visited.add(item.id); targets.set(item.id, item);
     if (item.mimeType !== "application/vnd.google-apps.folder") return;
     let pageToken = "";
     do {
+      if (control.cancelled) break;
       const params = new URLSearchParams({ q: `'${item.id}' in parents and trashed=false`, fields: "nextPageToken,files(id,name,mimeType,ownedByMe)", pageSize: "1000" });
       if (pageToken) params.set("pageToken", pageToken);
       let page;
@@ -507,10 +510,12 @@ async function transferOwnership(payload) {
   const results = [];
   // Transfer children before parents; do not follow Drive shortcuts.
   for (const item of Array.from(targets.values()).reverse()) {
+    if (control.cancelled) break;
     if (item.ownedByMe === false) continue;
     try {
       const permissions = await json(`${base}/${item.id}/permissions?fields=permissions(id,emailAddress,role)`, { headers });
       const existing = permissions.permissions?.find((p) => p.emailAddress?.toLowerCase() === email);
+      if (control.cancelled) break;
       if (existing?.role !== "owner") {
         await json(`${base}/${item.id}/permissions${existing ? `/${existing.id}` : ""}?transferOwnership=true&sendNotificationEmail=true`, {
           method: existing ? "PATCH" : "POST", headers,
@@ -520,7 +525,7 @@ async function transferOwnership(payload) {
       results.push({ name: item.name, displayPath: item.displayPath || item.name, id: item.id, isFolder: item.mimeType === "application/vnd.google-apps.folder", ok: true });
     } catch (error) { results.push({ name: item.name, ok: false, error: error.message }); }
   }
-  return { results, total: results.length, done: results.filter((item) => item.ok).length };
+  return { results, cancelled: control.cancelled, total: results.length, done: results.filter((item) => item.ok).length };
 }
 
 async function animationNotes(action, payload, onProgress = () => {}) {
@@ -613,7 +618,19 @@ async function animationNotes(action, payload, onProgress = () => {}) {
 export function registerGoogleWorkspaceHandlers(ipcMain) {
   ipcMain.handle("animation-notes", async (event, action, payload) => { try { return { ok: true, ...await animationNotes(action, payload, (message) => { if (!event.sender.isDestroyed()) event.sender.send("animation-notes-progress", message); }) }; } catch (error) { return { ok: false, error: error.message }; } });
   ipcMain.handle("workspace-transfer-owner", wrapTransfer);
-  async function wrapTransfer(_event, payload) { try { return { ok: true, ...await transferOwnership(payload) }; } catch (error) { return { ok: false, error: error.message }; } }
+  ipcMain.handle("workspace-cancel-transfer-owner", (event) => {
+    const control = ownerTransfers.get(event.sender.id);
+    if (control) control.cancelled = true;
+    return { ok: true };
+  });
+  async function wrapTransfer(event, payload) {
+    const id = event.sender.id;
+    if (ownerTransfers.has(id)) return { ok:false, error:"Đang có một lượt chuyển owner chạy." };
+    const control = { cancelled:false }; ownerTransfers.set(id, control);
+    try { return { ok: true, ...await transferOwnership(payload, control) }; }
+    catch (error) { return { ok: false, error: error.message }; }
+    finally { ownerTransfers.delete(id); }
+  }
   const wrap = (handler) => async (_event, ...args) => { try { return { ok: true, ...(await handler(...args)) }; } catch (error) { return { ok: false, error: error.message || String(error) }; } };
   ipcMain.handle("workspace-google-status", wrap(status));
   ipcMain.handle("workspace-google-sign-in", wrap(signIn));

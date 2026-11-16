@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('spinePreview', {
   },
   scanUploadGifs: (folder) => ipcRenderer.invoke('scan-upload-gifs', folder),
   transferOwnership: (payload) => ipcRenderer.invoke('workspace-transfer-owner', payload),
+  cancelTransferOwnership: () => ipcRenderer.invoke('workspace-cancel-transfer-owner'),
   assetBaseUrl: () => ipcRenderer.invoke('asset-base-url'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   scanFolder: (folderPath) => ipcRenderer.invoke('scan-spine-folder', folderPath),

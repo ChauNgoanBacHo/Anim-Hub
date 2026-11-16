@@ -76,9 +76,9 @@ function replaceImageAtCell(context, a1, blob, title) {
   const image = sheet.insertImage(blob, column, row);
   context.images[key] = [image];
   image.setAltTextTitle(title || 'Closure preview');
-  const cellWidth = 340;
-  const cellHeight = 260;
-  const maxWidth = 300;
+  const cellWidth = 300;
+  const cellHeight = Math.max(260, sheet.getRowHeight(row));
+  const maxWidth = cellWidth - 24;
   const maxHeight = 220;
   const originalWidth = image.getWidth();
   const originalHeight = image.getHeight();

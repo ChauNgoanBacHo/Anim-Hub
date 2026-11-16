@@ -2,6 +2,7 @@ import "./index.css";
 import mascotIcon from "../assets/icon-mascot-transparent.png";
 import mascotSuccess from "../assets/mascot-success-face.png";
 import mascotFail from "../assets/mascot-fail-face.png";
+import mascotCaution from "../assets/mascot-caution.png";
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
 import gifsicle from "gifsicle-wasm-browser";
 import { SpineStage } from "./spineStage.js";
@@ -44,11 +45,19 @@ const state = {
   search: "",
   module: "home",
   notes: { driveUrl: "", gameId: "", rows: [], busy: false, message: "", error: "", sheetUrl: "", dirty: false, games: [], initialized: false, saving: false, revision: 0, onlyNoted: false },
-  ownership: { sheetUrl: "", driveUrl: "", email: "", busy: false, message: "", error: "", results: [] },
+  ownership: { sheetUrl: "", driveUrl: "", email: localStorage.getItem("ownership-recipient-email") || "owner@enotion.io", busy: false, message: "", error: "", results: [] },
   google: { configured: false, signedIn: false, user: null, busy: false },
   workspace: {
     driveUrl: localStorage.getItem("closure-local-root") || "",
     animationFolder: localStorage.getItem("closure-animation-folder") || "_Animation",
+    animationPath: localStorage.getItem("closure-animation-path") || "",
+    uiPath: localStorage.getItem("closure-ui-path") || "",
+    useAnimation: true,
+    animationMode: "local",
+    uiMode: "local",
+    animationDrive: localStorage.getItem("closure-animation-drive") || "",
+    uiDrive: localStorage.getItem("closure-ui-drive") || "",
+    useUi: true,
     uiFolder: localStorage.getItem("closure-ui-folder") || "_UI_EN",
     sheetUrl: "",
     catalog: null,
@@ -264,6 +273,10 @@ function elapsedLabel(milliseconds) {
   const seconds = Math.floor(milliseconds / 1000);
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
+function operationDuration(startedAt) {
+  const seconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+  return seconds >= 60 ? `${Math.floor(seconds / 60)} phút ${seconds % 60} giây` : `${seconds} giây`;
+}
 async function waitForUploadQueue(jobId, total, spreadsheetId, tabLabel = "") {
   const w = state.workspace;
   const startedAt = Date.now();
@@ -449,6 +462,19 @@ function pageNotice() {
   return `${w.error ? `<div class="notice error">${esc(w.error)}</div>` : ""}${w.message ? `<div class="notice ok">${esc(w.message)}</div>` : ""}`;
 }
 
+function confirmOwnership(kind, email, url) {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "upload-result-dialog ownership-confirm";
+    let confirmed = false;
+    dialog.innerHTML = `<div class="result-mascot"><img src="${mascotCaution}" alt="Bà cô nhắc cẩn thận"></div><h2>Thím nhắc con, bút sa gà chết, nhìn kỹ email trước khi bấm</h2><p class="result-detail">Bạn sắp chuyển quyền sở hữu ${kind === "sheet" ? "Sheet này" : "folder này và toàn bộ file/folder con"} sang:</p><strong class="owner-recipient">${esc(email)}</strong><p class="result-detail">Sau khi chuyển, bạn không còn là chủ sở hữu. Việc chuyển lại cần chủ sở hữu mới hoặc quản trị viên hỗ trợ.</p><div class="result-next-actions"><button class="copy-sheet-action" data-cancel>Huỷ</button><button class="primary-action" data-confirm>Xác nhận chuyển</button></div>`;
+    dialog.querySelector("[data-cancel]").onclick = () => dialog.close();
+    dialog.querySelector("[data-confirm]").onclick = () => { confirmed = true; dialog.close(); };
+    dialog.addEventListener("close", () => { dialog.remove(); resolve(confirmed); }, { once: true });
+    document.body.append(dialog); dialog.showModal(); dialog.querySelector("[data-cancel]").focus();
+  });
+}
+
 function showUploadResult(ok, detail, workflow = "catalog") {
   document.querySelector(".upload-result-dialog")?.close();
   const dialog = document.createElement("dialog");
@@ -487,15 +513,21 @@ function featureLoginNotice() {
   return `<aside class="feature-login-notice" role="status"><div><strong>Cần đăng nhập Google</strong><p>${reasons[state.module] || ""}</p>${!state.google.configured ? `<p>Bản build chưa được cấu hình Google OAuth.</p>` : ""}</div><button class="primary-action" data-do="google-sign-in" ${!state.google.configured || state.google.busy ? "disabled" : ""}>${state.google.busy ? "Đang đăng nhập…" : "Login Google"}</button></aside>`;
 }
 
+window.spinePreview.onCatalogScanProgress?.((message) => {
+  if (!state.workspace.busy) return;
+  state.workspace.message = message;
+  if (state.module === "catalog") render();
+});
+
 function renderCatalog() {
   const w = state.workspace;
   const catalog = w.catalog;
   const sheetConfigured = state.google.signedIn && w.sheetUrl;
-  const actions = `<div class="module-actions"><button class="danger-action" data-do="clear-catalog" ${!sheetConfigured || w.busy ? "disabled" : ""}>Clear all data</button><button class="copy-sheet-action" data-do="copy-sheet" ${!w.sheetUrl || w.busy ? "disabled" : ""}>Make a copy ↗</button><button class="primary-action" data-do="create-catalog" ${!catalog || !sheetConfigured || w.busy ? "disabled" : ""}>Create / Update Sheet</button></div>`;
+  const actions = `<div class="module-actions"><button class="danger-action" data-do="clear-catalog" ${!sheetConfigured || w.busy ? "disabled" : ""}>Clear all data</button><button class="copy-sheet-action" data-do="copy-sheet" ${!w.sheetUrl || w.busy ? "disabled" : ""}>Make a copy ↗</button></div>`;
   const preview = catalog
     ? `<div class="catalog-summary"><div><strong>${esc(catalog.rootName)}</strong><span>${catalog.tabs.length} tabs · ${catalog.tabs.reduce((sum, tab) => sum + tab.items.length, 0)} items</span></div>${w.busy ? `<progress max="1" value="${w.progress}"></progress>` : ""}</div><div class="catalog-tabs">${catalog.tabs.map((tab, tabIndex) => `<article><header><div><b>${esc(tab.title)}</b><span>${tab.source === "ui" ? "UI images" : "Animation assets"}</span></div><div class="catalog-tab-actions"><strong>${tab.items.length}</strong><button data-do="upload-catalog-tab" data-tab-index="${tabIndex}" ${!sheetConfigured || w.busy ? "disabled" : ""}>Upload</button></div></header><ol>${tab.items.slice(0, 8).map((item) => `<li><span>${esc(item.name)}</span>${item.group ? `<small>${esc(item.group)}</small>` : ""}</li>`).join("")}${tab.items.length > 8 ? `<li class="more">+${tab.items.length - 8} more</li>` : ""}</ol></article>`).join("")}</div>`
-    : `<div class="module-empty"><b>Chưa scan folder local</b><span>Chọn folder gốc chứa *_Animation và *_UI_EN rồi bấm Scan.</span></div>`;
-app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${featureLoginNotice()}${workspaceSettings()}<section class="drive-source"><label><span>Local root folder</span><div><input readonly value="${esc(w.driveUrl)}" placeholder="Chọn folder data hoặc project root..."><button data-do="pick-local-root" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-local" ${!w.driveUrl || w.busy ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan"}</button></div></label></section><section class="workspace-settings catalog-folder-settings"><label><span>Folder Animation</span><input data-workspace="animationFolder" value="${esc(w.animationFolder)}" placeholder="_Animation" ${w.busy ? "disabled" : ""}></label><label><span>Folder UI</span><input data-workspace="uiFolder" value="${esc(w.uiFolder)}" placeholder="_UI_EN" ${w.busy ? "disabled" : ""}></label></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
+    : `<div class="module-empty"><b>${w.busy ? "Đang scan nguồn asset" : "Chưa có kết quả Scan"}</b><span>${w.busy ? "Tiến trình đang được cập nhật ở phía trên. Thời gian phụ thuộc số folder và tốc độ Drive." : "Tick Animation hoặc UI, nhập link Drive và chọn folder local tương ứng, rồi bấm Scan."}</span></div>`;
+app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${featureLoginNotice()}${workspaceSettings()}<section class="drive-source catalog-sources">${[["useAnimation","animationPath","animationDrive","Animation"],["useUi","uiPath","uiDrive","UI"]].map(([toggle,key,drive,label]) => `<section class="catalog-source"><label class="catalog-source-toggle"><input type="checkbox" data-catalog-toggle="${toggle}" ${w[toggle] ? "checked" : ""} ${w.busy ? "disabled" : ""}> ${label}</label><div class="catalog-source-option"><label><span class="source-label">Link Drive · lấy link folder cho sheet <button type="button" class="source-info" aria-label="Thông tin nguồn Drive">i<span class="source-info-tooltip" role="tooltip">Drive chỉ dùng để tìm link folder tương ứng và ghi vào cột Folder trên Sheet. App không tải JSON hay ảnh từ Drive.</span></button></span><input data-workspace="${drive}" value="${esc(w[drive])}" ${!w[toggle] || w.busy ? "disabled" : ""}></label></div><div class="catalog-source-option"><label><span class="source-label">Local · nguồn thông tin và upload ảnh lên sheet <button type="button" class="source-info" aria-label="Thông tin nguồn Local">i<span class="source-info-tooltip" role="tooltip">App scan thông tin asset từ local và điều chỉnh size, quality ảnh thành thumbnail để upload lên Sheet. Tên folder local cần khớp với Drive.</span></button></span></label><div class="catalog-source-path"><input data-workspace="${key}" value="${esc(w[key])}" ${!w[toggle] || w.busy ? "disabled" : ""}><button data-do="pick-catalog-source" data-source="${key}" ${!w[toggle] || w.busy ? "disabled" : ""}>Browse</button></div></div></section>`).join("")}<div class="module-actions catalog-scan-actions"><button data-do="scan-local" ${w.busy || !(w.useAnimation || w.useUi) || (w.useAnimation && (!w.animationPath || !w.animationDrive)) || (w.useUi && (!w.uiPath || !w.uiDrive)) ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan"}</button><button class="primary-action" data-do="create-catalog" ${!catalog || !sheetConfigured || w.busy ? "disabled" : ""}>Create / Update Sheet</button></div></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
 }
 
 function renderUpload() {
@@ -504,7 +536,7 @@ function renderUpload() {
   const selectedCount = w.uploadRows.filter((row) => row.file).length;
   const canUpload = selectedCount && state.google.signedIn && w.sheetUrl && !w.busy;
   const rows = w.uploadRows.length
-    ? `<div class="upload-head"><span>#</span><span>Animation item</span><span>GIF file</span></div>${w.uploadRows.map((row, index) => `<div class="upload-row ${row.status || ""}" data-upload-index="${index}"><span>${esc(row.index)}</span><div><b>${esc(row.name)}</b><small>${esc(row.sheetName || sheet.selected)} · Row ${row.rowNumber} · Preview C${row.rowNumber}</small></div><button class="file-drop ${row.file ? "has-file" : ""}" data-do="pick-upload-file"><input type="file" accept="image/gif" data-upload-file="${index}"><strong>${row.file ? esc(row.file.name) : "Drop GIF or choose file"}</strong><span>${row.status === "done" ? "Uploaded" : row.status === "uploading" ? "Queued / uploading…" : row.status === "failed" ? "Failed" : row.file ? `✓ Đã chọn GIF · ${Math.round(row.file.size / 1024)} KB · Bấm để đổi` : "GIF only"}</span></button>${row.file ? `<button class="remove-upload-gif" data-do="remove-upload-gif" data-index="${index}" title="Bỏ GIF đã chọn" aria-label="Bỏ GIF đã chọn" ${w.busy ? "disabled" : ""}>×</button>` : ""}</div>`).join("")}`
+    ? `<div class="upload-head"><span>#</span><span>Animation item</span><span>GIF file</span></div>${w.uploadRows.map((row, index) => `<div class="upload-row ${row.status || ""}" data-upload-index="${index}"><span>${esc(row.index)}</span><div><b>${esc(row.name)}</b><small>${esc(row.sheetName || sheet.selected)} · Row ${row.rowNumber} · Demo ${esc(row.demoCell || `C${row.rowNumber}`)}</small></div><button class="file-drop ${row.file ? "has-file" : ""}" data-do="pick-upload-file"><input type="file" accept="image/gif" data-upload-file="${index}"><strong>${row.file ? esc(row.file.name) : "Drop GIF or choose file"}</strong><span>${row.status === "done" ? "Uploaded" : row.status === "uploading" ? "Queued / uploading…" : row.status === "failed" ? "Failed" : row.file ? `✓ Đã chọn GIF · ${Math.round(row.file.size / 1024)} KB · Bấm để đổi` : "GIF only"}</span></button>${row.file ? `<button class="remove-upload-gif" data-do="remove-upload-gif" data-index="${index}" title="Bỏ GIF đã chọn" aria-label="Bỏ GIF đã chọn" ${w.busy ? "disabled" : ""}>×</button>` : ""}</div>`).join("")}`
     : `<div class="module-empty"><b>Chưa có animation rows</b><span>Closure Sheet được cấu hình sẵn trong bản build; bấm Load Sheet để bắt đầu.</span></div>`;
   app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Upload GIF</h1><p>Load animation rows, gắn GIF và upload qua queue tự động.</p></div><div class="module-actions"><button class="primary-action" data-do="upload-all" ${canUpload ? "" : "disabled"}>Upload ${selectedCount || ""} GIF</button></div></header>${featureLoginNotice()}${workspaceSettings()}<section class="upload-controls"><button data-do="load-sheet" ${!state.google.signedIn || !w.sheetUrl || w.busy ? "disabled" : ""}>${w.busy ? "Loading…" : "Load Sheet"}</button></section>${sheet ? `<section class="upload-folder-controls"><label class="batch-gif-picker"><span>Folder GIF · dùng chung GIF output</span><div class="upload-output-path"><input readonly value="${esc(state.output)}" placeholder="Chọn GIF output trong trang Tạo GIF"><button data-do="output" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-upload-output" ${!state.output || w.busy ? "disabled" : ""}>Scan</button></div></label></section>` : ""}${pageNotice()}${w.busy ? `<div class="upload-progress"><span style="width:${Math.max(0.02, w.progress) * 100}%"></span></div>` : ""}<section class="upload-list">${rows}</section></main>`;
 }
@@ -572,7 +604,7 @@ function renderAnimationNotes() {
 
 function renderOwnership() {
   const o = state.ownership;
-  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Chuyển owner</h1><p>Chuyển quyền sở hữu Sheet, folder Drive và tất cả file con sang email cùng công ty.</p></div><button class="primary-action" data-do="transfer-owner" ${o.busy || !state.google.signedIn || !o.sheetUrl || !o.driveUrl || !o.email ? "disabled" : ""}>${o.busy ? "Đang chuyển…" : "Chuyển owner"}</button></header>${featureLoginNotice()}<section class="workspace-settings ownership-form">${[["sheetUrl", "Google Sheet", "https://docs.google.com/spreadsheets/d/..."], ["driveUrl", "Folder Drive chứa asset", "https://drive.google.com/drive/folders/..."], ["email", "Email chủ sở hữu mới", "assets@company.com"]].map(([key, label, placeholder]) => `<label><span>${label}</span><input data-owner-field="${key}" type="${key === "email" ? "email" : "text"}" value="${esc(o[key])}" placeholder="${placeholder}" ${o.busy ? "disabled" : ""}></label>`).join("")}</section><section class="catalog-preview">${o.busy ? `<div class="notice">Đang quét folder và chuyển quyền. Giữ app mở đến khi hoàn tất.</div>` : ""}${o.message ? `<div class="notice ok">${esc(o.message)}</div>` : ""}${o.error ? `<div class="notice error">${esc(o.error)}</div>` : ""}${o.results.filter((item) => !item.ok).map((item) => `<div class="notice error">${esc(item.name)}: ${esc(item.error)}</div>`).join("")}</section></main>`;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Chuyển owner</h1><p>Chuyển Sheet hoặc folder asset sang tài khoản quản lý cùng công ty.</p></div></header>${featureLoginNotice()}<section class="workspace-settings ownership-form"><label><span>Email chủ sở hữu mới · dùng chung</span><input data-owner-field="email" type="email" value="${esc(o.email)}" ${o.busy ? "disabled" : ""}></label></section>${[["sheet","sheetUrl","Google Sheet"],["folder","driveUrl","Folder Drive chứa asset"]].map(([kind,key,title]) => `<section class="workspace-settings ownership-form"><h2>${title}</h2><label><span>Đường dẫn ${title}</span><input data-owner-field="${key}" value="${esc(o[key])}" ${o.busy ? "disabled" : ""}></label><div class="module-actions"><button class="primary-action" data-do="transfer-owner" data-kind="${kind}" ${o.busy || !o.email || !o[key] || !state.google.signedIn ? "disabled" : ""}>${o.busy && o.activeKind === kind ? "Đang chuyển…" : `Chuyển owner ${kind === "sheet" ? "Sheet" : "folder"}`}</button></div>${o.activeKind === kind ? `${o.busy ? `<div class="notice">Đang chuyển quyền. Giữ app mở đến khi hoàn tất.</div>` : ""}${o.message ? `<div class="notice ok">${esc(o.message)}</div>` : ""}${o.error ? `<div class="notice error">${esc(o.error)}</div>` : ""}${o.results.some((item) => item.ok && item.isFolder) ? `<div class="owner-transferred-folders"><h3>Folder đã chuyển thành công</h3><ul>${o.results.filter((item) => item.ok && item.isFolder).map((item) => `<li>${esc(item.displayPath || item.name)}</li>`).join("")}</ul></div>` : ""}` : ""}</section>`).join("")}</main>`;
 }
 
 function renderNaming() {
@@ -1163,13 +1195,16 @@ app.addEventListener("click", async (e) => {
     finally { w.busy = false; render(); }
   } else if (a === "transfer-owner") {
     const o = state.ownership;
-    if (o.busy || !window.confirm(`Chuyển quyền sở hữu Sheet và toàn bộ folder asset (bao gồm file con) sang ${o.email}? Thao tác có thể làm thay đổi quyền quản lý của bạn.`)) return;
+    const kind = b.dataset.kind;
+    if (o.busy || !await confirmOwnership(kind, o.email, kind === "sheet" ? o.sheetUrl : o.driveUrl)) return;
+    o.activeKind = kind;
     o.busy = true; o.error = ""; o.message = ""; o.results = []; render();
     try {
-      const result = await window.spinePreview.transferOwnership({ sheetUrl: o.sheetUrl, driveUrl: o.driveUrl, email: o.email });
+      const result = await window.spinePreview.transferOwnership({ kind, sheetUrl: kind === "sheet" ? o.sheetUrl : "", driveUrl: kind === "folder" ? o.driveUrl : "", email: o.email });
       if (!result?.ok) throw new Error(result?.error || "Không chuyển được owner.");
       o.results = result.results;
-      o.message = `Đã chuyển ${result.done}/${result.total} item sang ${o.email}.`;
+      if (kind === "sheet" && !result.done) o.error = result.results.find((item) => !item.ok)?.error || "Không chuyển được Sheet.";
+      o.message = kind === "folder" ? `Đã chuyển ${result.results.filter((item) => item.ok && item.isFolder).length} folder và ${result.results.filter((item) => item.ok && !item.isFolder).length} file sang ${o.email}. Các mục không có quyền được bỏ qua.` : `Đã chuyển ${result.done}/${result.total} Sheet sang ${o.email}.`;
     } catch (error) { o.error = error.message; }
     finally { o.busy = false; render(); }
   } else if (a === "open-naming-folder") {
@@ -1207,6 +1242,18 @@ app.addEventListener("click", async (e) => {
     state.google.user = null;
     state.module = "home";
     render();
+  } else if (a === "pick-catalog-source") {
+    const folder = await window.spinePreview.selectFolder();
+    if (folder) {
+      const key = b.dataset.source;
+      const modeKey = key === "animationPath" ? "animationMode" : "uiMode";
+      state.workspace[key + (state.workspace[modeKey] === "drive" ? "Drive" : "Local")] = state.workspace[key];
+      state.workspace[modeKey] = "local";
+      state.workspace[key + "Local"] = folder;
+      state.workspace[key] = folder;
+      localStorage.setItem(key === "animationPath" ? "closure-animation-path" : "closure-ui-path", folder);
+      state.workspace.catalog = null; state.workspace.message = ""; render();
+    }
   } else if (a === "pick-local-root") {
     const folder = await window.spinePreview.selectFolder();
     if (folder) {
@@ -1219,11 +1266,19 @@ app.addEventListener("click", async (e) => {
     }
   } else if (a === "scan-local") {
     const w = state.workspace;
-    w.busy = true; w.error = ""; w.message = "";
+    w.catalog = null;
+    const scanStartedAt = Date.now();
+    w.busy = true; w.error = ""; w.message = "Đang kiểm tra nguồn Drive và folder local…";
     render();
-    const result = await window.spinePreview.scanLocalCatalog(w.driveUrl, { animationFolder: w.animationFolder, uiFolder: w.uiFolder });
+    const result = await window.spinePreview.scanLocalCatalog("", { separateSources: true, hybrid: true, animationPath: w.animationPath, uiPath: w.uiPath, animationDrive:w.animationDrive, uiDrive:w.uiDrive, useAnimation: w.useAnimation, useUi: w.useUi });
     w.busy = false;
-    if (result?.ok) { w.catalog = result; w.message = `Đã đọc ${result.tabs.length} tab từ folder local.`; }
+    if (result?.ok) {
+      w.catalog = result;
+      const seconds = Math.max(1, Math.round((Date.now() - scanStartedAt) / 1000));
+      const duration = seconds >= 60 ? `${Math.floor(seconds / 60)} phút ${seconds % 60} giây` : `${seconds} giây`;
+      const total = result.tabs.reduce((sum, tab) => sum + tab.items.length, 0);
+      w.message = `Scan hoàn tất · ${result.tabs.length} tab · ${total} item · Tổng thời gian: ${duration}.`;
+    }
     else w.error = result?.error || "Không scan được folder local.";
     render();
   } else if (a === "copy-sheet") {
@@ -1251,6 +1306,7 @@ app.addEventListener("click", async (e) => {
     const tab = a === "upload-catalog-tab" ? w.catalog.tabs[Number(b.dataset.tabIndex)] : null;
     if (a === "upload-catalog-tab" && !tab) return;
     const uploadCatalog = tab ? { ...w.catalog, tabs: [tab] } : w.catalog;
+    const uploadStartedAt = Date.now();
     const uploadTabLabel = uploadCatalog.tabs.map((item) => item.title).join(", ");
     w.busy = true; w.progress = 0; w.error = ""; w.message = `Đang cập nhật tab: ${uploadTabLabel}…`;
     render();
@@ -1258,7 +1314,10 @@ app.addEventListener("click", async (e) => {
     if (!result?.ok) {
       w.error = result?.error || "Không tạo được Sheet catalog.";
     } else {
-      const images = uploadCatalog.tabs.flatMap((tab) => tab.items.map((item, index) => ({ ...item, tab: tab.title, row: index + 2 }))).filter((item) => item.kind === "image");
+      const images = uploadCatalog.tabs.flatMap((tab) => [
+        ...tab.items.map((item, index) => ({ ...item, tab: tab.title, row: index + 2, column: "C" })).filter((item) => item.kind === "image" || item.pngPaths?.length || item.driveImages?.length),
+        ...(tab.views || []).map((item, index) => ({ ...item, tab: tab.title, row: index + 2, column: "I" })),
+      ]);
       try {
         if (images.length) {
           w.message = `Tab: ${uploadTabLabel} · Đang chuẩn bị ${images.length} ảnh…`;
@@ -1267,8 +1326,11 @@ app.addEventListener("click", async (e) => {
             spreadsheetId: result.spreadsheetId,
             images: images.map((item) => ({
               sheetName: item.tab,
-              cell: `C${item.row}`,
-              localPath: item.localPath,
+              cell: `${item.column}${item.row}`,
+              localPath: item.kind === "spine" ? undefined : item.localPath,
+              localPaths: item.kind === "spine" ? item.pngPaths : item.previewPaths,
+              driveImages: item.driveImages,
+              kind: item.kind,
               fileName: item.name,
             })),
           });
@@ -1283,7 +1345,7 @@ app.addEventListener("click", async (e) => {
     }
     w.busy = false; w.progress = 0;
     render();
-    showUploadResult(!w.error, w.error || w.message);
+    showUploadResult(!w.error, `${w.error || w.message}\nTổng thời gian xử lý: ${operationDuration(uploadStartedAt)}.`);
   } else if (a === "load-sheet") {
     const w = state.workspace;
     w.busy = true; w.error = ""; w.message = ""; render();
@@ -1297,6 +1359,7 @@ app.addEventListener("click", async (e) => {
     b.querySelector("input[type=file]")?.click();
   } else if (a === "upload-all") {
     const w = state.workspace;
+    const uploadStartedAt = Date.now();
     const queue = w.uploadRows.filter((row) => row.file);
     w.busy = true; w.error = ""; w.message = ""; w.progress = 0; render();
     try {
@@ -1305,7 +1368,7 @@ app.addEventListener("click", async (e) => {
       for (let index = 0; index < queue.length; index += 1) {
         const row = queue[index];
         row.status = "ready";
-        images.push({ sheetName: row.sheetName || w.sheet.selected, cell: `C${row.rowNumber}`, fileName: row.file.name, mimeType: row.file.type || "image/gif", dataBase64: await fileToBase64(row.file) });
+        images.push({ sheetName: row.sheetName || w.sheet.selected, cell: row.demoCell || `C${row.rowNumber}`, fileName: row.file.name, mimeType: row.file.type || "image/gif", dataBase64: await fileToBase64(row.file) });
         w.progress = ((index + 1) / queue.length) * 0.1;
         render();
       }
@@ -1322,7 +1385,7 @@ app.addEventListener("click", async (e) => {
     w.progress = 0;
     if (!w.error) w.message = `Completed · ${queue.length} GIF uploaded to ${w.sheet.selected}.`;
     render();
-    showUploadResult(!w.error, w.error || `Đã upload ${queue.length} GIF lên Sheet.`, "upload");
+    showUploadResult(!w.error, `${w.error || `Đã upload ${queue.length} GIF lên Sheet.`}\nTổng thời gian xử lý: ${operationDuration(uploadStartedAt)}.`, "upload");
   } else if (a === "pick-naming-folder") {
     const folder = await window.spinePreview.selectFolder();
     if (folder) { state.naming.folder = folder; localStorage.setItem("naming-folder", folder); render(); }
@@ -1386,6 +1449,12 @@ app.addEventListener("input", (e) => {
   if (t.matches("[data-workspace]")) {
     const key = t.dataset.workspace;
     state.workspace[key] = t.value;
+    if (["animationPath", "uiPath", "animationDrive", "uiDrive"].includes(key)) {
+      const w = state.workspace;
+      w.catalog = null; w.message = "";
+      const scanButton = app.querySelector('[data-do="scan-local"]');
+      if (scanButton) scanButton.disabled = w.busy || !(w.useAnimation || w.useUi) || (w.useAnimation && (!w.animationPath.trim() || !w.animationDrive.trim())) || (w.useUi && (!w.uiPath.trim() || !w.uiDrive.trim()));
+    }
     localStorage.setItem(`closure-${key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`)}`, t.value);
   } else if (t.matches("[data-naming-folder]")) {
     state.naming.folder = t.value;
@@ -1411,6 +1480,32 @@ app.addEventListener("input", (e) => {
     trim(t.closest("[data-trim-editor]"), t.dataset.role, t.value);
 });
 app.addEventListener("change", (e) => {
+  if (e.target.dataset.catalogPath) {
+    const w = state.workspace, key = e.target.dataset.catalogPath, mode = e.target.dataset.pathMode;
+    const modeKey = key === "animationPath" ? "animationMode" : "uiMode";
+    w[key + (w[modeKey] === "drive" ? "Drive" : "Local")] = w[key];
+    w[key + (mode === "drive" ? "Drive" : "Local")] = e.target.value.trim();
+    w[modeKey] = mode; w[key] = e.target.value.trim();
+    w.catalog = null; w.message = ""; render(); return;
+  }
+  if (e.target.dataset.catalogMode) {
+    const w = state.workspace, modeKey = e.target.dataset.catalogMode;
+    const key = modeKey === "animationMode" ? "animationPath" : "uiPath";
+    w[key + (w[modeKey] === "drive" ? "Drive" : "Local")] = w[key];
+    w[modeKey] = e.target.value;
+    w[key] = w[key + (e.target.value === "drive" ? "Drive" : "Local")] || "";
+    w.catalog = null; w.message = ""; render(); return;
+  }
+  if (["animationMode", "uiMode"].includes(e.target.dataset.workspace)) {
+    const key = e.target.dataset.workspace;
+    state.workspace[key] = e.target.value;
+    state.workspace[key === "animationMode" ? "animationPath" : "uiPath"] = "";
+    state.workspace.catalog = null; state.workspace.message = ""; render(); return;
+  }
+  if (e.target.dataset.catalogToggle) {
+    state.workspace[e.target.dataset.catalogToggle] = e.target.checked;
+    state.workspace.catalog = null; state.workspace.message = ""; render(); return;
+  }
   const t = e.target,
     row = t.closest(".anim");
   if (t.matches("[data-notes-filter]")) { state.notes.onlyNoted = t.checked; render(); return; }
@@ -1433,6 +1528,7 @@ app.addEventListener("change", (e) => {
   }
   if (t.dataset.ownerField) {
     state.ownership[t.dataset.ownerField] = t.value.trim();
+    if (t.dataset.ownerField === "email" && t.validity.valid && t.value.trim()) localStorage.setItem("ownership-recipient-email", t.value.trim());
     render();
     return;
   }
@@ -1556,7 +1652,7 @@ window.addEventListener("resize", () => {
 let bootFinished = false;
 const bootStartedAt = Date.now();
 const finishBoot = () => {
-  const remaining = 2500 - (Date.now() - bootStartedAt);
+  const remaining = 2000 - (Date.now() - bootStartedAt);
   if (remaining > 0) { setTimeout(finishBoot, remaining); return; }
   if (!bootFinished) { bootFinished = true; render(); }
 };

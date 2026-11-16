@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('spinePreview', {
+  onCatalogScanProgress: (callback) => {
+    const listener = (_event, message) => callback(message);
+    ipcRenderer.on('catalog-scan-progress', listener);
+    return () => ipcRenderer.removeListener('catalog-scan-progress', listener);
+  },
   animationNotes: (action, payload) => ipcRenderer.invoke('animation-notes', action, payload),
   onAnimationNotesProgress: (callback) => {
     const listener = (_event, message) => callback(message);

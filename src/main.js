@@ -14,7 +14,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import started from "electron-squirrel-startup";
-import { registerGoogleWorkspaceHandlers } from "./googleWorkspace.js";
+import { registerGoogleWorkspaceHandlers, scanDriveCatalog, attachDriveFolderLinks } from "./googleWorkspace.js";
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -152,6 +152,20 @@ function isCatalogImage(entry) {
 }
 
 function scanLocalCatalog(rootPath, options = {}) {
+  if (options.separateSources) {
+    const tabs = [];
+    const names = [];
+    for (const [enabled, folder, source] of [[options.useAnimation, options.animationPath, "animation"], [options.useUi, options.uiPath, "ui"]]) {
+      if (!enabled) continue;
+      if (!folder || !fs.statSync(folder).isDirectory()) throw new Error(`Chọn folder ${source === "ui" ? "UI" : "Animation"} hợp lệ.`);
+      const name = path.basename(folder);
+      const part = scanLocalCatalog(path.dirname(folder), { animationFolder: source === "animation" ? name : "__disabled__", uiFolder: source === "ui" ? name : "__disabled__" });
+      tabs.push(...part.tabs); names.push(name);
+    }
+    if (!names.length) throw new Error("Tick ít nhất một nguồn Animation hoặc UI.");
+    if (new Set(tabs.map((tab) => safeCatalogTitle(tab.title))).size !== tabs.length) throw new Error("Hai nguồn có tên tab trùng nhau. Hãy scan riêng từng nguồn.");
+    return { rootPath: "", rootName: names.join(" / "), tabs };
+  }
   if (!rootPath || !fs.existsSync(rootPath) || !fs.statSync(rootPath).isDirectory()) {
     throw new Error("Folder local không hợp lệ.");
   }
@@ -170,7 +184,21 @@ function scanLocalCatalog(rootPath, options = {}) {
       const categoryPath = path.join(animationPath, category.name);
       const items = directoryEntries(categoryPath)
         .filter((entry) => entry.isDirectory())
-        .map((entry) => ({ name: entry.name, kind: "spine", group: "", localPath: path.join(categoryPath, entry.name) }));
+        .flatMap((entry) => {
+          const folder = path.join(categoryPath, entry.name);
+          const files = directoryEntries(folder);
+          const pngPaths = files.filter((file) => file.isFile() && /\.png$/i.test(file.name)).map((file) => path.join(folder, file.name));
+          const spines = files.filter((file) => file.isFile() && /\.json$/i.test(file.name)).flatMap((file) => {
+            try {
+              const data = JSON.parse(fs.readFileSync(path.join(folder, file.name), "utf8"));
+              if (!data.skeleton || !data.animations) return [];
+              return [{ name: file.name.replace(/\.json$/i, ""), animations: Object.keys(data.animations), skinCount: readSkinNames(data.skins).filter((name) => name !== "default").length }];
+            } catch { return []; }
+          });
+          if (!spines.length) return [];
+          const description = spines.map((spine) => `File:${spine.name} có ${spine.animations.length} anim:\n${spine.animations.map((name) => `- ${name}`).join("\n")}\nSố skin: ${spine.skinCount}`).join("\n\n");
+          return [{ name: entry.name, kind:"spine", group:entry.name, localPath:folder, pngPaths, spines, description }];
+        });
       tabs.push({ title: stripProjectPrefix(category.name), source: "animation", sourceName: category.name, items });
     }
   }
@@ -184,12 +212,35 @@ function scanLocalCatalog(rootPath, options = {}) {
         const groupPath = path.join(categoryPath, group.name);
         items.push(...directoryEntries(groupPath).filter(isCatalogImage).map((entry) => ({ name: entry.name, kind: "image", group: group.name, localPath: path.join(groupPath, entry.name) })));
       }
-      tabs.push({ title: stripProjectPrefix(category.name), source: "ui", sourceName: category.name, items });
+      const views = items.filter((item) => /(?:^|[_\- ])view(?:[_\- .]|$)/i.test(item.name));
+      const grouped = [], states = new Map();
+      for (const item of items.filter((item) => !views.includes(item))) {
+        const match = item.name.match(/^(.*?)[_\- ](normal|pressed|hover|disable|disabled)\.(png|jpe?g|webp)$/i);
+        if (!match) { grouped.push(item); continue; }
+        const key = `${item.group}\n${match[1]}`.toLowerCase();
+        if (!states.has(key)) {
+          const group = { ...item, name: match[1], previewPaths: [], fileNames: [] };
+          states.set(key, group); grouped.push(group);
+        }
+        const group = states.get(key);
+        group.previewPaths.push(item.localPath); group.fileNames.push(item.name);
+      }
+      const stateOrder = { normal: 0, pressed: 1, hover: 2, disable: 3, disabled: 3 };
+      for (const group of states.values()) {
+        const ordered = group.fileNames.map((name, index) => ({ name, filePath: group.previewPaths[index], state: name.match(/[_\- ](normal|pressed|hover|disable|disabled)\.[^.]+$/i)?.[1].toLowerCase() }));
+        ordered.sort((a, b) => stateOrder[a.state] - stateOrder[b.state] || a.name.localeCompare(b.name));
+        group.fileNames = ordered.map((item) => item.name);
+        group.previewPaths = ordered.map((item) => item.filePath);
+        group.localPath = group.previewPaths[0];
+      }
+      tabs.push({ title: stripProjectPrefix(category.name), source: "ui", sourceName: category.name, items: grouped, views });
     }
   }
   const rootName = animation?.name.replace(/_Animation$/i, "") || ui?.name.replace(/_UI_EN$/i, "") || path.basename(rootPath);
   return { rootPath, rootName, tabs };
 }
+
+function safeCatalogTitle(title) { return String(title).replace(/[\\/?*\[\]:]/g, "-").slice(0, 100); }
 
 function namingSuggestion(name, keepExtension = false, animation = false) {
   const extension = keepExtension ? path.extname(name) : "";
@@ -518,7 +569,44 @@ function registerIpcHandlers() {
     return filePaths[0];
   });
   ipcMain.handle("scan-local-catalog", async (_event, rootPath, options) => {
-    try { await validateScanFolder(rootPath, "catalog"); return { ok: true, ...scanLocalCatalog(rootPath, options) }; }
+    const startedAt = Date.now();
+    const report = (message) => { if (!_event.sender.isDestroyed()) _event.sender.send("catalog-scan-progress", `${message} · ${Math.floor((Date.now() - startedAt) / 1000)}s`); };
+    try {
+      if (options?.separateSources) {
+        if (options.hybrid) {
+          const tabs = [], names = [];
+          for (const [enabled, local, drive, source] of [[options.useAnimation, options.animationPath, options.animationDrive, "animation"], [options.useUi, options.uiPath, options.uiDrive, "ui"]]) {
+            if (!enabled) continue;
+            report(`Đang kiểm tra folder local ${source === "ui" ? "UI" : "Animation"}`);
+            if (!drive?.trim()) throw new Error(`Nhập link Drive cho ${source}.`);
+            await validateScanFolder(local, "catalog");
+            report(`Đang scan asset local · ${source === "ui" ? "UI" : "Animation"}`);
+            const localCatalog = scanLocalCatalog("", { separateSources: true, useAnimation: source === "animation", useUi: source === "ui", animationPath: local, uiPath: local });
+            await attachDriveFolderLinks(drive, localCatalog, report);
+            tabs.push(...localCatalog.tabs);
+            names.push(path.basename(local));
+          }
+          if (!names.length) throw new Error("Tick ít nhất một phần Animation hoặc UI.");
+          if (new Set(tabs.map((tab) => safeCatalogTitle(tab.title))).size !== tabs.length) throw new Error("Các nguồn có tên tab trùng nhau.");
+          return { ok: true, tabs, rootName: names.join(" / ") };
+        }
+        if (options.animationMode === "drive" || options.uiMode === "drive") {
+          const tabs = [], names = [];
+          for (const [enabled, folder, mode, source] of [[options.useAnimation,options.animationPath,options.animationMode,"animation"],[options.useUi,options.uiPath,options.uiMode,"ui"]]) {
+            if (!enabled) continue;
+            let part;
+            if (mode === "drive") part = await scanDriveCatalog(folder,source);
+            else { await validateScanFolder(folder,"catalog"); part = scanLocalCatalog("", { separateSources:true, useAnimation:source === "animation",useUi:source === "ui",animationPath:folder,uiPath:folder }); }
+            tabs.push(...part.tabs); names.push(part.rootName);
+          }
+          if (new Set(tabs.map((tab) => safeCatalogTitle(tab.title))).size !== tabs.length) throw new Error("Các nguồn có tên tab trùng nhau. Hãy Scan riêng.");
+          return { ok:true, tabs, rootName:names.join(" / ") };
+        }
+        if (options.useAnimation) await validateScanFolder(options.animationPath, "catalog");
+        if (options.useUi) await validateScanFolder(options.uiPath, "catalog");
+      } else await validateScanFolder(rootPath, "catalog");
+      return { ok: true, ...scanLocalCatalog(rootPath, options) };
+    }
     catch (error) { return { ok: false, error: error.message || String(error) }; }
   });
 

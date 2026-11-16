@@ -462,6 +462,19 @@ function pageNotice() {
   return `${w.error ? `<div class="notice error">${esc(w.error)}</div>` : ""}${w.message ? `<div class="notice ok">${esc(w.message)}</div>` : ""}`;
 }
 
+function confirmClearCatalog() {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "clear-catalog-confirm";
+    let confirmed = false;
+    dialog.innerHTML = `<h2>Xoá toàn bộ dữ liệu?</h2><p>Tất cả tab và dữ liệu trong Closure Sheet sẽ bị xoá. Sheet chỉ còn một tab trắng mặc định.</p><div class="module-actions"><button class="copy-sheet-action" data-cancel>Huỷ</button><button class="primary-action" data-confirm>Xác nhận</button></div>`;
+    dialog.querySelector("[data-cancel]").onclick = () => dialog.close();
+    dialog.querySelector("[data-confirm]").onclick = () => { confirmed = true; dialog.close(); };
+    dialog.addEventListener("close", () => { dialog.remove(); resolve(confirmed); }, { once: true });
+    document.body.append(dialog); dialog.showModal(); dialog.querySelector("[data-cancel]").focus();
+  });
+}
+
 function confirmOwnership(kind, email, url) {
   return new Promise((resolve) => {
     const dialog = document.createElement("dialog");
@@ -480,8 +493,8 @@ function showUploadResult(ok, detail, workflow = "catalog") {
   const dialog = document.createElement("dialog");
   dialog.className = `upload-result-dialog ${ok ? "success" : "failure"}`;
   dialog.setAttribute("aria-label", ok ? "Upload thành công" : "Upload thất bại");
-  const title = !ok ? "Tạch rồi con, làm lại đi" : workflow === "upload" ? "Vui chưa con, còn bước cuối nữa" : "Chưa chắc giòn đâu, còn làm tiếp.";
-  const destinations = workflow === "upload" ? [["ownership", "Chuyển Owner"]] : [["export", "Tạo GIF"], ["upload", "Upload GIF"]];
+  const title = !ok ? "Tạch rồi con, làm lại đi" : workflow === "upload" ? "Vui chưa con, còn bước cuối nữa" : workflow === "export" ? "GIF xong rồi đó, upload tiếp đi con!" : "Chưa chắc giòn đâu, còn làm tiếp.";
+  const destinations = workflow === "upload" ? [["ownership", "Chuyển Owner"]] : workflow === "export" ? [["upload", "Upload GIF"]] : [["export", "Tạo GIF"], ["upload", "Upload GIF"]];
   dialog.innerHTML = `<div class="result-mascot"><img src="${ok ? mascotSuccess : mascotFail}" alt="Chủ xóm"></div><p class="result-kicker">BÀ CÔ BÁO TIN</p><h2>${title}</h2><p class="result-detail">${esc(detail || "")}</p><div class="result-next-actions">${ok ? destinations.map(([id, label]) => `<button class="primary-action" data-result-module="${id}">${label}</button>`).join("") : `<button class="primary-action" data-result-close>Để con xem lại</button>`}</div>`;
   dialog.querySelectorAll("button").forEach((button) => {
     button.onclick = () => {
@@ -1072,6 +1085,7 @@ async function exportAll() {
   state.exporting = false;
   state.progress = 0;
   render();
+  if (!state.error) showUploadResult(true, state.status, "export");
 }
 
 app.addEventListener("click", async (e) => {
@@ -1299,7 +1313,7 @@ app.addEventListener("click", async (e) => {
       render();
     }
   } else if (a === "clear-catalog") {
-    if (!window.confirm("Xoá toàn bộ dữ liệu và tất cả tab của Closure Sheet? Sheet sẽ chỉ còn một tab trắng mặc định.")) return;
+    if (!await confirmClearCatalog()) return;
     const w = state.workspace;
     w.busy = true; w.error = ""; w.message = "";
     render();

@@ -1398,6 +1398,13 @@ body[data-module="ownership"] .ownership-form .notice { grid-column: 1 / -1; mar
 .owner-transferred-folders { grid-column: 1 / -1; padding-top: 12px; border-top: 1px solid #454d57; }
 .owner-transferred-folders h3 { margin: 0 0 10px; font-size: 16px; color: #cee9d9; }.owner-transferred-folders ul { margin: 0; padding-left: 22px; color: #d0d7e1; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
 
+.clear-catalog-confirm { width: min(460px,90vw); padding: 26px; border: 1px solid #9c626d; border-radius: 14px; background: #21191d; color: #f5ebee; box-shadow: 0 20px 80px #0008; }
+.clear-catalog-confirm::backdrop { background: #0009; backdrop-filter: blur(3px); }
+.clear-catalog-confirm h2 { margin: 0 0 12px; font-size: 24px; }
+.clear-catalog-confirm p { margin: 0 0 24px; color: #d6c5cb; font-size: 15px; line-height: 1.7; }
+.clear-catalog-confirm .module-actions { justify-content: flex-end; }
+.clear-catalog-confirm [data-confirm] { background: #ed9eab; border-color: #ed9eab; color: #39131d; }
+
 /* The neighborhood toolbox: readable type and four distinct doorways. */
 .feature-hero small { color: #c4df9b; font-size: 12px; letter-spacing: .2em; }
 .feature-hero h1 { font-size: clamp(32px, 3.5vw, 52px); letter-spacing: -.035em; line-height: 1.2; margin: 12px 0 0; color: #f1f2e9; }

@@ -259,7 +259,7 @@ async function createCatalog(sheetUrl, catalog) {
       }
       const fileNames = item.fileNames?.join("\n") || item.spineFileName || (!isUi && item.localPath && fs.existsSync(item.localPath)
         ? fs.readdirSync(item.localPath, { withFileTypes: true }).filter((entry) => entry.isFile() && !entry.name.startsWith(".") && !/\.meta$/i.test(entry.name)).map((entry) => entry.name).sort().join("\n") : item.name);
-      return [index + 1, isUi ? "Static" : "Spine", "", item.driveFolderUrl ? item.driveFolderName || item.group || tab.sourceName : "", fileNames, ...(isUi ? [dimensions] : []), "Done", isUi ? "" : item.description || "", ""];
+      return [index + 1, isUi ? "Static" : "Spine", "", item.driveFolderUrl ? item.driveFolderName || item.group || tab.sourceName : "", fileNames, ...(isUi ? [dimensions] : []), "DONE", isUi ? "" : item.description || "", ""];
     })];
     while (isUi && values.length < (tab.views || []).length + 1) values.push(Array(columns.length).fill(""));
     await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`${quoted(title)}!A1`)}?valueInputOption=RAW`, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ values }) });
@@ -275,6 +275,7 @@ async function createCatalog(sheetUrl, catalog) {
     const statusIndex = tab.source === "ui" ? 6 : 5;
     const widths = tab.source === "ui" ? [40,70,300,220,270,140,80,300,300] : [40,70,300,220,270,80,300,300];
     return [
+      { repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: rowCount, startColumnIndex: 4, endColumnIndex: 5 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE" } }, fields: "userEnteredFormat(horizontalAlignment,verticalAlignment)" } },
       ...(tab.source === "ui" ? [{ repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: rowCount, startColumnIndex: 5, endColumnIndex: 6 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE" } }, fields: "userEnteredFormat(horizontalAlignment,verticalAlignment)" } }] : []),
       ...tab.items.map((item, index) => ({ repeatCell: { range: { sheetId, startRowIndex:index + 1, endRowIndex:index + 2, startColumnIndex:3, endColumnIndex:4 }, cell: { userEnteredFormat: { horizontalAlignment:"CENTER", verticalAlignment:"MIDDLE", textFormat: item.driveFolderUrl ? { link:{ uri:item.driveFolderUrl }, underline:true, foregroundColor:{ red:.15, green:.35, blue:.8 } } : { underline:false, foregroundColor:{red:0,green:0,blue:0} } } }, fields:"userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)" } })),
       ...widths.map((pixelSize, index) => ({ updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: index, endIndex: index + 1 }, properties: { pixelSize }, fields: "pixelSize" } })),

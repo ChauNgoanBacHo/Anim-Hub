@@ -222,7 +222,24 @@ export async function scanDriveCatalog(folderUrl, source, onProgress = () => {})
   return { tabs, rootName: "Drive" };
 }
 
-async function createCatalog(sheetUrl, catalog) {
+const catalogOperations = new Map();
+function checkCatalogOperation(id) { if (id && catalogOperations.get(id)?.cancelled) throw new Error("Đã huỷ Create / Update Sheet. Dữ liệu đã ghi vẫn được giữ lại."); }
+async function cancelCatalogOperation(id) {
+  const operation = catalogOperations.get(id);
+  if (!operation) return {};
+  operation.cancelled = true;
+  if (operation.jobId) {
+    const token = await accessToken();
+    const base = `https://sheets.googleapis.com/v4/spreadsheets/${operation.spreadsheetId}/values`;
+    const data = await json(`${base}/${encodeURIComponent(`${quoted(QUEUE_SHEET)}!A:B`)}`, { headers: { Authorization: `Bearer ${token}` } });
+    const updates = (data.values || []).flatMap((row,index) => row[0] === operation.jobId && ["queued","processing"].includes(row[1]) ? [{ range:`${quoted(QUEUE_SHEET)}!B${index+1}`, values:[["cancelled"]] }] : []);
+    if (updates.length) await json(`${base}:batchUpdate`, { method:"POST", headers:{ Authorization:`Bearer ${token}`, "Content-Type":"application/json" }, body:JSON.stringify({ valueInputOption:"RAW", data:updates }) });
+  }
+  return {};
+}
+async function createCatalog(sheetUrl, catalog, operationId) {
+  if (operationId) catalogOperations.set(operationId, { cancelled:false });
+  checkCatalogOperation(operationId);
   const spreadsheetId = idFrom(sheetUrl, "sheet");
   if (!spreadsheetId) throw new Error("Link Google Sheet không hợp lệ.");
   const token = await accessToken();
@@ -247,6 +264,7 @@ async function createCatalog(sheetUrl, catalog) {
   }
   if (requests.length) await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ requests }) });
   for (const tab of catalog.tabs) {
+    checkCatalogOperation(operationId);
     const title = safeSheetTitle(tab.title);
     await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`${quoted(title)}!A:I`)}:clear`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}" });
     const isUi = tab.source === "ui";
@@ -293,6 +311,7 @@ async function createCatalog(sheetUrl, catalog) {
       { updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: 1 } }, fields: "gridProperties.frozenRowCount" } },
     ];
   });
+  checkCatalogOperation(operationId);
   if (layoutRequests.length) {
     await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ requests: layoutRequests }) });
   }
@@ -390,6 +409,7 @@ async function ensureQueueSheet(spreadsheetId, token) {
 }
 
 async function queueImages(payload) {
+  checkCatalogOperation(payload.operationId);
   const spreadsheetId = payload.spreadsheetId || idFrom(CLOSURE_SHEET_URL, "sheet");
   if (!spreadsheetId) throw new Error("Closure Sheet ID không hợp lệ.");
   const token = await accessToken();
@@ -401,6 +421,7 @@ async function queueImages(payload) {
   const cacheDir = fs.mkdtempSync(path.join(app.getPath("temp"), "xom-thumbnail-"));
   try {
     for (const original of payload.images || []) {
+      checkCatalogOperation(payload.operationId);
       let item = original;
       if (item.driveImages?.length) {
         const paths = [];
@@ -424,12 +445,18 @@ async function queueImages(payload) {
     if (chunks.length > 31) throw new Error(`Ảnh ${item.fileName || "preview"} vẫn quá lớn cho upload queue.`);
     return [jobId, "queued", item.sheetName, item.cell, item.fileName, item.mimeType || "image/png", "", createdAt, createdAt, ...chunks];
   });
+  checkCatalogOperation(payload.operationId);
   if (!rows.length) return { jobId, total: 0 };
   await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`${quoted(QUEUE_SHEET)}!A:AN`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ values: rows }),
   });
+  if (payload.operationId) {
+    Object.assign(catalogOperations.get(payload.operationId), {jobId, spreadsheetId});
+    if (catalogOperations.get(payload.operationId).cancelled) await cancelCatalogOperation(payload.operationId);
+    checkCatalogOperation(payload.operationId);
+  }
   return { jobId, total: rows.length };
 }
 
@@ -637,6 +664,8 @@ export function registerGoogleWorkspaceHandlers(ipcMain) {
   ipcMain.handle("workspace-google-sign-in", wrap(signIn));
   ipcMain.handle("workspace-google-sign-out", async () => { const store = readStore(); delete store.tokens; delete store.user; writeStore(store); return { ok: true }; });
   ipcMain.handle("workspace-create-catalog", wrap(createCatalog));
+  ipcMain.handle("workspace-cancel-catalog", wrap(cancelCatalogOperation));
+  ipcMain.handle("workspace-finish-catalog", (_event,id) => { catalogOperations.delete(id); return {ok:true}; });
   ipcMain.handle("workspace-load-sheet", wrap(loadSheet));
   ipcMain.handle("workspace-clear-catalog", wrap(clearCatalog));
   ipcMain.handle("workspace-queue-images", wrap(queueImages));

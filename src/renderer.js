@@ -287,6 +287,7 @@ async function waitForUploadQueue(jobId, total, spreadsheetId, tabLabel = "") {
   let lastCompleted = -1;
   let lastProgressAt = startedAt;
   while (Date.now() - startedAt < timeoutMs) {
+    if (w.catalogOperation && w.catalogCancelled) throw new Error("Đã huỷ Create / Update Sheet.");
     const result = await window.spinePreview.queueStatus(jobId, spreadsheetId);
     if (!result?.ok) throw new Error(result?.error || "Không đọc được upload queue.");
     const completed = result.done + result.error;
@@ -543,7 +544,7 @@ function renderCatalog() {
   const preview = catalog
     ? `<div class="catalog-summary"><div><strong>${esc(catalog.rootName)}</strong><span>${catalog.tabs.length} tabs · ${catalog.tabs.reduce((sum, tab) => sum + tab.items.length, 0)} items</span></div>${w.busy ? `<progress max="1" value="${w.progress}"></progress>` : ""}</div><div class="catalog-tabs">${catalog.tabs.map((tab, tabIndex) => `<article><header><div><b>${esc(tab.title)}</b><span>${tab.source === "ui" ? "UI images" : "Animation assets"}</span></div><div class="catalog-tab-actions"><strong>${tab.items.length}</strong><button data-do="upload-catalog-tab" data-tab-index="${tabIndex}" ${!sheetConfigured || w.busy ? "disabled" : ""}>Upload</button></div></header><ol>${tab.items.slice(0, 8).map((item) => `<li><span>${esc(item.name)}</span>${item.group ? `<small>${esc(item.group)}</small>` : ""}</li>`).join("")}${tab.items.length > 8 ? `<li class="more">+${tab.items.length - 8} more</li>` : ""}</ol></article>`).join("")}</div>`
     : `<div class="module-empty"><b>${w.busy ? "Đang scan nguồn asset" : "Chưa có kết quả Scan"}</b><span>${w.busy ? "Tiến trình đang được cập nhật ở phía trên. Thời gian phụ thuộc số folder và tốc độ Drive." : "Tick Animation hoặc UI, nhập link Drive và chọn folder local tương ứng, rồi bấm Scan."}</span></div>`;
-app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${featureLoginNotice()}${workspaceSettings()}<section class="drive-source catalog-sources">${[["useAnimation","animationPath","animationDrive","Animation"],["useUi","uiPath","uiDrive","UI"]].map(([toggle,key,drive,label]) => `<section class="catalog-source"><label class="catalog-source-toggle"><input type="checkbox" data-catalog-toggle="${toggle}" ${w[toggle] ? "checked" : ""} ${w.busy ? "disabled" : ""}> ${label}</label><div class="catalog-source-option"><label><span class="source-label">Link Drive · lấy link folder cho sheet <button type="button" class="source-info" aria-label="Thông tin nguồn Drive">i<span class="source-info-tooltip" role="tooltip">Drive chỉ dùng để tìm link folder tương ứng và ghi vào cột Folder trên Sheet. App không tải JSON hay ảnh từ Drive.</span></button></span><input data-workspace="${drive}" value="${esc(w[drive])}" ${!w[toggle] || w.busy ? "disabled" : ""}></label></div><div class="catalog-source-option"><label><span class="source-label">Local · nguồn thông tin và upload ảnh lên sheet <button type="button" class="source-info" aria-label="Thông tin nguồn Local">i<span class="source-info-tooltip" role="tooltip">App scan thông tin asset từ local và điều chỉnh size, quality ảnh thành thumbnail để upload lên Sheet. Tên folder local cần khớp với Drive.</span></button></span></label><div class="catalog-source-path"><input data-workspace="${key}" value="${esc(w[key])}" ${!w[toggle] || w.busy ? "disabled" : ""}><button data-do="pick-catalog-source" data-source="${key}" ${!w[toggle] || w.busy ? "disabled" : ""}>Browse</button></div></div></section>`).join("")}<div class="module-actions catalog-scan-actions"><button data-do="scan-local" ${w.busy || !(w.useAnimation || w.useUi) || (w.useAnimation && (!w.animationPath || !w.animationDrive)) || (w.useUi && (!w.uiPath || !w.uiDrive)) ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan"}</button><button class="primary-action" data-do="create-catalog" ${!catalog || !sheetConfigured || w.busy ? "disabled" : ""}>Create / Update Sheet</button></div></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
+app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${featureLoginNotice()}${workspaceSettings()}<section class="drive-source catalog-sources">${[["useAnimation","animationPath","animationDrive","Animation"],["useUi","uiPath","uiDrive","UI"]].map(([toggle,key,drive,label]) => `<section class="catalog-source"><label class="catalog-source-toggle"><input type="checkbox" data-catalog-toggle="${toggle}" ${w[toggle] ? "checked" : ""} ${w.busy ? "disabled" : ""}> ${label}</label><div class="catalog-source-option"><label><span class="source-label">Link Drive · lấy link folder cho sheet <button type="button" class="source-info" aria-label="Thông tin nguồn Drive">i<span class="source-info-tooltip" role="tooltip">Drive chỉ dùng để tìm link folder tương ứng và ghi vào cột Folder trên Sheet. App không tải JSON hay ảnh từ Drive.</span></button></span><input data-workspace="${drive}" value="${esc(w[drive])}" ${!w[toggle] || w.busy ? "disabled" : ""}></label></div><div class="catalog-source-option"><label><span class="source-label">Local · nguồn thông tin và upload ảnh lên sheet <button type="button" class="source-info" aria-label="Thông tin nguồn Local">i<span class="source-info-tooltip" role="tooltip">App scan thông tin asset từ local và điều chỉnh size, quality ảnh thành thumbnail để upload lên Sheet. Tên folder local cần khớp với Drive.</span></button></span></label><div class="catalog-source-path"><input data-workspace="${key}" value="${esc(w[key])}" ${!w[toggle] || w.busy ? "disabled" : ""}><button data-do="pick-catalog-source" data-source="${key}" ${!w[toggle] || w.busy ? "disabled" : ""}>Browse</button></div></div></section>`).join("")}<div class="module-actions catalog-scan-actions"><button data-do="scan-local" ${w.busy || !(w.useAnimation || w.useUi) || (w.useAnimation && (!w.animationPath || !w.animationDrive)) || (w.useUi && (!w.uiPath || !w.uiDrive)) ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan"}</button><button class="primary-action" data-do="create-catalog" ${!catalog || !sheetConfigured || w.busy ? "disabled" : ""}>Create / Update Sheet</button>${w.catalogOperation ? `<button class="copy-sheet-action" data-do="cancel-catalog" ${w.catalogCancelled ? "disabled" : ""}>${w.catalogCancelled ? "Đang huỷ…" : "Cancel"}</button>` : ""}</div></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
 }
 
 function renderUpload() {
@@ -620,7 +621,7 @@ function renderAnimationNotes() {
 
 function renderOwnership() {
   const o = state.ownership;
-  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Chuyển owner</h1><p>Chuyển Sheet hoặc folder asset sang tài khoản quản lý cùng công ty.</p></div></header>${featureLoginNotice()}<section class="workspace-settings ownership-form"><label><span>Email chủ sở hữu mới · dùng chung</span><div class="owner-email-control"><input data-owner-field="email" type="email" required value="${esc(o.email)}" ${!o.editingEmail ? "readonly" : ""} ${o.busy ? "disabled" : ""}><button type="button" class="copy-sheet-action" data-do="${o.editingEmail ? "lock-owner-email" : "edit-owner-email"}" ${o.busy ? "disabled" : ""}>${o.editingEmail ? "Lưu" : "Edit"}</button></div></label></section>${[["sheet","sheetUrl","Google Sheet"],["folder","driveUrl","Folder Drive chứa asset"]].map(([kind,key,title]) => `<section class="workspace-settings ownership-form"><h2>${title}</h2><label><span>Đường dẫn ${title}</span><input data-owner-field="${key}" value="${esc(o[key])}" ${o.busy ? "disabled" : ""}></label><div class="module-actions"><button class="primary-action" data-do="transfer-owner" data-kind="${kind}" ${o.busy || o.editingEmail || !o.email || !o[key] || !state.google.signedIn ? "disabled" : ""}>${o.busy && o.activeKind === kind ? "Đang chuyển…" : `Chuyển owner ${kind === "sheet" ? "Sheet" : "folder"}`}</button>${o.busy && o.activeKind === kind ? `<button class="danger-action" data-do="cancel-transfer-owner" ${o.cancelling ? "disabled" : ""}>${o.cancelling ? "Đang dừng…" : "Cancel"}</button>` : ""}</div>${o.activeKind === kind ? `${o.busy ? `<div class="notice">${o.cancelling ? "Đang dừng sau mục hiện tại. Các mục đã chuyển vẫn giữ nguyên." : "Đang chuyển quyền. Có thể Cancel để dừng trước mục tiếp theo."}</div>` : ""}${o.message ? `<div class="notice ok">${esc(o.message)}</div>` : ""}${o.error ? `<div class="notice error">${esc(o.error)}</div>` : ""}${o.results.some((item) => item.ok && item.isFolder) ? `<div class="owner-transferred-folders"><h3>Folder đã chuyển thành công</h3><ul>${o.results.filter((item) => item.ok && item.isFolder).map((item) => `<li>${esc(item.displayPath || item.name)}</li>`).join("")}</ul></div>` : ""}` : ""}</section>`).join("")}</main>`;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Chuyển owner</h1><p>Chuyển Sheet hoặc folder asset sang tài khoản quản lý cùng công ty.</p></div></header>${featureLoginNotice()}<section class="workspace-settings ownership-form"><label><span>Email chủ sở hữu mới · dùng chung</span><div class="owner-email-control"><input data-owner-field="email" type="email" required value="${esc(o.email)}" ${!o.editingEmail ? "readonly" : ""} ${o.busy ? "disabled" : ""}><button type="button" class="copy-sheet-action" data-do="${o.editingEmail ? "lock-owner-email" : "edit-owner-email"}" ${o.busy ? "disabled" : ""}>${o.editingEmail ? "Lưu" : "Edit"}</button></div></label></section>${[["sheet","sheetUrl","Google Sheet"],["folder","driveUrl","Folder Drive chứa asset"]].map(([kind,key,title]) => `<section class="workspace-settings ownership-form"><h2>${title}</h2><label><span>Đường dẫn ${title}</span><input data-owner-field="${key}" value="${esc(o[key])}" ${o.busy ? "disabled" : ""}></label><div class="module-actions"><button class="primary-action" data-do="transfer-owner" data-kind="${kind}" ${o.busy || o.editingEmail || !o.email || !o[key] || !state.google.signedIn ? "disabled" : ""}>${o.busy && o.activeKind === kind ? "Đang chuyển…" : `Chuyển owner ${kind === "sheet" ? "sheet" : "folder"}`}</button>${o.busy && o.activeKind === kind ? `<button class="danger-action" data-do="cancel-transfer-owner" ${o.cancelling ? "disabled" : ""}>${o.cancelling ? "Đang dừng…" : "Cancel"}</button>` : ""}</div>${o.activeKind === kind ? `${o.busy ? `<div class="notice">${o.cancelling ? "Đang dừng sau mục hiện tại. Các mục đã chuyển vẫn giữ nguyên." : "Đang chuyển quyền. Có thể Cancel để dừng trước mục tiếp theo."}</div>` : ""}${o.message ? `<div class="notice ok">${esc(o.message)}</div>` : ""}${o.error ? `<div class="notice error">${esc(o.error)}</div>` : ""}${o.results.some((item) => item.ok && item.isFolder) ? `<div class="owner-transferred-folders"><h3>Folder đã chuyển thành công</h3><ul>${o.results.filter((item) => item.ok && item.isFolder).map((item) => `<li>${esc(item.displayPath || item.name)}</li>`).join("")}</ul></div>` : ""}` : ""}</section>`).join("")}</main>`;
 }
 
 function renderNaming() {
@@ -1386,6 +1387,12 @@ app.addEventListener("click", async (e) => {
     if (result?.ok) w.message = "Đã xoá toàn bộ dữ liệu và tab; Sheet hiện còn một tab trắng mặc định.";
     else w.error = result?.error || "Không thể xoá dữ liệu trong Sheet.";
     render();
+  } else if (a === "cancel-catalog") {
+    const w = state.workspace;
+    if (!w.catalogOperation || w.catalogCancelled) return;
+    w.catalogCancelled = true; render();
+    const cancelled = await window.spinePreview.cancelCatalog(w.catalogOperation);
+    if (!cancelled?.ok) { w.catalogCancelled = false; w.error = cancelled?.error || "Không thể huỷ. Hãy thử lại."; render(); }
   } else if (a === "create-catalog" || a === "upload-catalog-tab") {
     const w = state.workspace;
     if (w.busy || !w.catalog || !state.google.signedIn) return;
@@ -1393,10 +1400,11 @@ app.addEventListener("click", async (e) => {
     if (a === "upload-catalog-tab" && !tab) return;
     const uploadCatalog = tab ? { ...w.catalog, tabs: [tab] } : w.catalog;
     const uploadStartedAt = Date.now();
+    w.catalogOperation = crypto.randomUUID(); w.catalogCancelled = false;
     const uploadTabLabel = uploadCatalog.tabs.map((item) => item.title).join(", ");
     w.busy = true; w.progress = 0; w.error = ""; w.message = `Đang cập nhật tab: ${uploadTabLabel}…`;
     render();
-    const result = await window.spinePreview.createCatalog(w.sheetUrl, uploadCatalog);
+    const result = await window.spinePreview.createCatalog(w.sheetUrl, uploadCatalog, w.catalogOperation);
     if (!result?.ok) {
       w.error = result?.error || "Không tạo được Sheet catalog.";
     } else {
@@ -1405,10 +1413,12 @@ app.addEventListener("click", async (e) => {
         ...(tab.views || []).map((item, index) => ({ ...item, tab: tab.title, row: index + 2, column: "I" })),
       ]);
       try {
+        if (w.catalogCancelled) throw new Error("Đã huỷ Create / Update Sheet. Dữ liệu đã ghi vẫn được giữ lại.");
         if (images.length) {
           w.message = `Tab: ${uploadTabLabel} · Đang chuẩn bị ${images.length} ảnh…`;
           render();
           const queued = await window.spinePreview.queueImages({
+            operationId: w.catalogOperation,
             spreadsheetId: result.spreadsheetId,
             images: images.map((item) => ({
               sheetName: item.tab,
@@ -1429,7 +1439,10 @@ app.addEventListener("click", async (e) => {
         w.error = error.message || String(error);
       }
     }
+    await window.spinePreview.finishCatalog(w.catalogOperation);
+    w.catalogOperation = null;
     w.busy = false; w.progress = 0;
+    if (w.catalogCancelled) { w.error = ""; w.message = "Đã huỷ Create / Update Sheet. Dữ liệu đã ghi vẫn được giữ lại."; render(); return; }
     render();
     showUploadResult(!w.error, `${w.error || w.message}\nTổng thời gian xử lý: ${operationDuration(uploadStartedAt)}.`);
   } else if (a === "load-sheet") {

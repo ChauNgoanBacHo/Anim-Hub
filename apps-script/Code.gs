@@ -27,6 +27,8 @@ function processClosureStudioQueue() {
       }
     }
     if (rows[index][1] !== 'queued') continue;
+    // Re-read cancellation state: this batch may have been cancelled after loading rows.
+    if (queue.getRange(index + 2, 2).getValue() !== 'queued') continue;
     if (Date.now() - startedAt > 240000) break;
     const sheetRow = index + 2;
     queue.getRange(sheetRow, 2).setValue('processing');

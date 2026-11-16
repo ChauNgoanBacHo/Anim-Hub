@@ -1440,3 +1440,7 @@ body[data-module="ownership"] .ownership-form .notice { grid-column: 1 / -1; mar
 .feature-account button,.feature-back { font-size: 13px; height: 40px; padding: 0 16px; }
 .module-page { font-size: 15px; }
 @media (max-width: 680px) { .feature-home { padding: 0 20px 32px; }.app-logo span { display: none; }.feature-account strong { font-size: 12px; }.feature-account span { font-size: 11px; }.feature-grid > button { padding: 28px 22px; gap: 16px; }.feature-grid h2 { font-size: 22px; } }
+
+.catalog-scan-actions button[data-do="cancel-catalog"] { height: 48px; padding: 0 24px; border: 1px solid #586371; border-radius: 11px; background: #2a3038; color: #d7e8ff; font-size: 16px; font-weight: 800; box-shadow: none; }
+.catalog-scan-actions button[data-do="cancel-catalog"]:hover:not(:disabled) { background: #343c46; border-color: #7b899a; }
+.catalog-scan-actions button[data-do="cancel-catalog"]:disabled { opacity: .45; cursor: not-allowed; }

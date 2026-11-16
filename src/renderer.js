@@ -1240,7 +1240,10 @@ app.addEventListener("click", async (e) => {
       const result = await window.spinePreview.animationNotes(action, { driveUrl: n.driveUrl, gameId: n.gameId, rows: n.rows });
       if (!result?.ok) throw new Error(result?.error || "Không xử lý được ghi chú.");
       n.rows = result.rows; n.dirty = false;
-      if (action === "save" && !n.games.includes(n.gameId)) n.games.push(n.gameId);
+      if (action === "scan" || action === "save") {
+        n.gameId = n.gameId.trim();
+        n.games = [...new Set([...n.games, n.gameId])].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      }
       n.message = action === "scan" ? `Đã cập nhật ${n.rows.length} anim vào tab ${n.gameId}, giữ nguyên ghi chú cũ.` : `Đã load ${n.rows.length} anim.`;
     } catch (error) { n.error = error.message; }
     finally { n.busy = false; render(); }

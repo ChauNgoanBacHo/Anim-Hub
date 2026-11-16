@@ -21,6 +21,8 @@ concurrency:
 jobs:
   release-windows:
     runs-on: windows-latest
+    outputs:
+      release_tag: ${{ steps.release_tag.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -142,3 +144,64 @@ jobs:
             echo "- ${asset_name}: ${download_url}" >> "$GITHUB_STEP_SUMMARY"
             echo "Portable asset URL: ${download_url}"
           done
+
+  release-macos:
+    name: Release macOS (${{ matrix.arch }})
+    needs: release-windows
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build macOS ZIP
+        run: npm run make:zip -- --arch=${{ matrix.arch }}
+        env:
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GOOGLE_WORKSPACE_DOMAIN: ${{ vars.GOOGLE_WORKSPACE_DOMAIN }}
+          CLOSURE_SHEET_URL: ${{ vars.CLOSURE_SHEET_URL }}
+          ANIMATION_NOTES_SHEET_URL: ${{ vars.ANIMATION_NOTES_SHEET_URL }}
+
+      - name: Name release archive
+        env:
+          RELEASE_TAG: ${{ needs.release-windows.outputs.release_tag }}
+          RELEASE_ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p out/make/release-macos
+          ARCHIVE="$(find out/make/zip/darwin -name '*.zip' -type f -print -quit)"
+          test -n "$ARCHIVE" || { echo "macOS ZIP not found"; exit 1; }
+          cp "$ARCHIVE" "out/make/release-macos/Xom-Nha-La-macOS-${RELEASE_ARCH}-${RELEASE_TAG}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xom-nha-la-macos-${{ matrix.arch }}
+          path: out/make/release-macos/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish macOS download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release-windows.outputs.release_tag }}
+          files: out/make/release-macos/*.zip
+          fail_on_unmatched_files: true
+
+      - name: Publish download link
+        env:
+          RELEASE_TAG: ${{ needs.release-windows.outputs.release_tag }}
+          RELEASE_ARCH: ${{ matrix.arch }}
+        run: |
+          echo "## macOS ${RELEASE_ARCH}" >> "$GITHUB_STEP_SUMMARY"
+          echo "[Download ZIP](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/Xom-Nha-La-macOS-${RELEASE_ARCH}-${RELEASE_TAG}.zip)" >> "$GITHUB_STEP_SUMMARY"

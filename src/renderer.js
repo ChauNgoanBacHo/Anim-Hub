@@ -21,6 +21,8 @@ const state = {
   output: localStorage.getItem("gif-output") || "",
   bakeChecker: localStorage.getItem("gif-bake-checker") !== "false",
   combineSymbols: localStorage.getItem("gif-combine-symbols") === "true",
+  exportMode: ["single", "group", "both"].includes(localStorage.getItem("gif-export-mode")) ? localStorage.getItem("gif-export-mode") : localStorage.getItem("gif-combine-symbols") === "true" ? "group" : "single",
+  groupFileName: localStorage.getItem("gif-group-name") || "anim_group",
   optimizeGif: localStorage.getItem("gif-optimize") === "true",
   objectSize: OBJECT_SIZES.includes(savedObjectSize) ? savedObjectSize : 80,
   cropPadding: Number(localStorage.getItem("gif-crop-padding")) || 8,
@@ -635,7 +637,7 @@ function renderExporter() {
   ${state.error ? `<div class="notice error">${esc(state.error)}</div>` : ""}${state.status ? `<div class="notice ok">${esc(state.status)}</div>` : ""}
   <section class="batch-tools"><label><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input data-search value="${esc(state.search)}" placeholder="Search Spine hoặc animation..."></label><button class="clear-search ${state.search ? "" : "hidden"}" data-do="clear-search">Clear</button><span></span><button class="check-first" data-do="check-first" ${state.files.length ? "" : "disabled"}>Check first <b>${state.files.filter((file) => file.animations.length).length}</b></button><button class="uncheck-all" data-do="uncheck-all" ${count ? "" : "disabled"}>Uncheck all <b>${count || ""}</b></button></section>
   <section class="workspace"><div class="headrow"><span>Spine asset</span><span>Animations · chọn skin và animation để export</span></div><div class="groups">${visible.length ? visible.map(groupView).join("") : emptyView(Boolean(state.search))}</div></section>
-  <footer><div class="progress"><div><span>${state.exporting ? esc(state.status) : `${count} animation ready`}</span><strong>${state.exporting ? `${Math.round(state.progress * 100)}%` : state.combineSymbols ? "GROUP · AUTO OPTIMIZE" : "AUTO CROP · MAX 0.5 MB"}</strong></div><aside><em style="width:${state.exporting ? state.progress * 100 : 0}%"></em></aside></div><label class="export-option"><span>All duration</span><select data-role="global-duration">${GLOBAL_DURATIONS.map((value) => `<option value="${value}" ${state.globalDuration === value ? "selected" : ""}>${value}s</option>`).join("")}</select></label><label class="export-option"><span>Object size</span><select data-role="object-size">${OBJECT_SIZES.map((value) => `<option value="${value}" ${state.objectSize === value ? "selected" : ""}>${value}%</option>`).join("")}</select></label><label class="export-option"><span>Padding</span><select data-role="crop-padding"><option value="4" ${state.cropPadding === 4 ? "selected" : ""}>4 px</option><option value="8" ${state.cropPadding === 8 ? "selected" : ""}>8 px</option><option value="16" ${state.cropPadding === 16 ? "selected" : ""}>16 px</option><option value="24" ${state.cropPadding === 24 ? "selected" : ""}>24 px</option></select></label>${state.combineSymbols ? `<label class="export-option"><span>Object / row</span><select data-role="group-per-row">${[2, 3, 4, 5, 6].map((value) => `<option value="${value}" ${state.groupPerRow === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>` : ""}<label class="checker-export"><input type="checkbox" data-role="optimize-gif" ${state.optimizeGif ? "checked" : ""}><span>Optimize GIF</span></label><label class="checker-export"><input type="checkbox" data-role="combine-symbols" ${state.combineSymbols ? "checked" : ""}><span>Gộp Anim</span></label><label class="checker-export"><input type="checkbox" data-role="bake-checker" ${state.bakeChecker ? "checked" : ""}><span>Nền caro</span></label><button class="export" data-do="export" ${!count || state.exporting ? "disabled" : ""}>${icon("export")} ${state.exporting ? "Exporting…" : state.combineSymbols ? `Export 1 Group GIF` : `Export ${count} GIF${count === 1 ? "" : "s"}`}</button></footer>
+  <footer><div class="progress"><div><span>${state.exporting ? esc(state.status) : `${count} animation ready`}</span><strong>${state.exporting ? `${Math.round(state.progress * 100)}%` : (state.exportMode !== "single") ? "GROUP · AUTO OPTIMIZE" : "AUTO CROP · MAX 0.5 MB"}</strong></div><aside><em style="width:${state.exporting ? state.progress * 100 : 0}%"></em></aside></div><label class="export-option"><span>All duration</span><select data-role="global-duration">${GLOBAL_DURATIONS.map((value) => `<option value="${value}" ${state.globalDuration === value ? "selected" : ""}>${value}s</option>`).join("")}</select></label><label class="export-option"><span>Object size</span><select data-role="object-size">${OBJECT_SIZES.map((value) => `<option value="${value}" ${state.objectSize === value ? "selected" : ""}>${value}%</option>`).join("")}</select></label><label class="export-option"><span>Padding</span><select data-role="crop-padding"><option value="4" ${state.cropPadding === 4 ? "selected" : ""}>4 px</option><option value="8" ${state.cropPadding === 8 ? "selected" : ""}>8 px</option><option value="16" ${state.cropPadding === 16 ? "selected" : ""}>16 px</option><option value="24" ${state.cropPadding === 24 ? "selected" : ""}>24 px</option></select></label>${(state.exportMode !== "single") ? `<label class="export-option"><span>Object / row</span><select data-role="group-per-row">${[2, 3, 4, 5, 6].map((value) => `<option value="${value}" ${state.groupPerRow === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>` : ""}<label class="checker-export"><input type="checkbox" data-role="optimize-gif" ${state.optimizeGif ? "checked" : ""}><span>Optimize GIF</span></label><label class="export-option"><span>Export</span><select data-role="export-mode" ${state.exporting ? "disabled" : ""}>${[["single","Single"],["group","Gộp anim"],["both","Single + Gộp"]].map(([value,label]) => `<option value="${value}" ${state.exportMode === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>${state.exportMode !== "single" ? `<label class="export-option group-name-option"><span>Tên GIF gộp</span><input data-role="group-file-name" value="${esc(state.groupFileName)}" ${state.exporting ? "disabled" : ""}></label>` : ""}<label class="checker-export"><input type="checkbox" data-role="bake-checker" ${state.bakeChecker ? "checked" : ""}><span>Nền caro</span></label><button class="export" data-do="export" ${!count || state.exporting ? "disabled" : ""}>${icon("export")} ${state.exporting ? "Exporting…" : state.exportMode === "both" ? `Export ${count} + 1 GIF` : state.exportMode === "group" ? `Export 1 Group GIF` : `Export ${count} GIF${count === 1 ? "" : "s"}`}</button></footer>
   <aside class="preview ${state.active ? "open" : ""}"><div class="preview-title"><div><strong data-preview-name>Preview</strong><span>Loop theo đúng timeframe và skin đã chọn</span></div><div class="preview-actions"><button data-do="toggle-preview" title="Play/Pause">${state.previewPaused ? "▶" : "Ⅱ"}</button><button data-do="close" title="Đóng preview">×</button></div></div><div data-canvas class="canvas"></div>${previewTrimView()}</aside></main>`;
   mountStage();
 }
@@ -1052,9 +1054,7 @@ async function exportAll() {
   render();
   try {
     const files = [];
-    if (state.combineSymbols) {
-      files.push(await encodeCombined(list));
-    } else {
+    if (state.exportMode !== "group") {
       const names = new Map();
       for (let i = 0; i < list.length; i++) {
         const file = await encode(list[i], i, list.length);
@@ -1063,6 +1063,14 @@ async function exportAll() {
         if (count > 1) file.fileName = file.fileName.replace(/\.gif$/i, `_${count}.gif`);
         files.push(file);
       }
+    }
+    if (state.exportMode !== "single") {
+      const group = await encodeCombined(list);
+      const base = clean(state.groupFileName.trim().replace(/\.gif$/i, "")) || "anim_group";
+      group.fileName = `${base}.gif`;
+      let suffix = 2;
+      while (files.some((file) => file.fileName.toLowerCase() === group.fileName.toLowerCase())) group.fileName = `${base}_${suffix++}.gif`;
+      files.push(group);
     }
     if (state.optimizeGif) {
       for (let index = 0; index < files.length; index += 1) {
@@ -1600,10 +1608,16 @@ app.addEventListener("change", (e) => {
     render();
     return;
   }
-  if (t.dataset.role === "combine-symbols") {
-    state.combineSymbols = t.checked;
-    localStorage.setItem("gif-combine-symbols", String(t.checked));
+  if (t.dataset.role === "export-mode") {
+    state.exportMode = t.value;
+    state.combineSymbols = t.value !== "single";
+    localStorage.setItem("gif-export-mode", t.value);
     render();
+    return;
+  }
+  if (t.dataset.role === "group-file-name") {
+    state.groupFileName = t.value;
+    localStorage.setItem("gif-group-name", t.value);
     return;
   }
   if (t.dataset.role === "object-size") {

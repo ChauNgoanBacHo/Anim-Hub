@@ -1405,6 +1405,9 @@ body[data-module="ownership"] .ownership-form .notice { grid-column: 1 / -1; mar
 .clear-catalog-confirm .module-actions { justify-content: flex-end; }
 .clear-catalog-confirm [data-confirm] { background: #ed9eab; border-color: #ed9eab; color: #39131d; }
 
+.group-name-option input { width: 150px; height: 38px; padding: 0 10px; border: 1px solid #4c5665; border-radius: 8px; background: #15191f; color: #e2ebf5; font-size: 13px; }
+.exporter-page footer { height: auto; min-height: 90px; flex-wrap: wrap; }
+
 /* The neighborhood toolbox: readable type and four distinct doorways. */
 .feature-hero small { color: #c4df9b; font-size: 12px; letter-spacing: .2em; }
 .feature-hero h1 { font-size: clamp(32px, 3.5vw, 52px); letter-spacing: -.035em; line-height: 1.2; margin: 12px 0 0; color: #f1f2e9; }

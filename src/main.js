@@ -448,9 +448,41 @@ async function saveBatchGifs(outputDir, files) {
   return writtenFiles;
 }
 
+async function validateScanFolder(folder, mode) {
+  if (typeof folder !== "string" || !folder.trim()) throw new Error("Hãy chọn folder asset trước khi Scan.");
+  if (/^[a-z]+:\/\//i.test(folder)) throw new Error("Đây là link web. Hãy chọn đường dẫn folder trên máy bằng Browse.");
+  const resolved = await fs.promises.realpath(folder).catch(() => { throw new Error("Folder không tồn tại hoặc không có quyền truy cập."); });
+  if (!(await fs.promises.stat(resolved)).isDirectory()) throw new Error("Đường dẫn phải là folder, không phải file.");
+  const broad = [path.parse(resolved).root, app.getPath("home"), app.getPath("documents"), app.getPath("desktop")];
+  if (broad.includes(resolved)) throw new Error("Folder đang chọn quá tổng quát. Hãy chọn folder asset của một game hoặc một nhóm Spine cụ thể.");
+  const started = Date.now();
+  let entries = 0, folders = 0, jsonBytes = 0, gifBytes = 0;
+  const stop = () => { throw new Error("Folder quá lớn hoặc có quá nhiều thư mục con nên đã dừng Scan để tránh treo app. Hãy chọn folder asset nhỏ hơn, không chọn toàn bộ project hoặc nhiều game cùng lúc."); };
+  async function inspect(dir, depth) {
+    if (depth > 24 || ++folders > 1500 || Date.now() - started > 10000) stop();
+    const handle = await fs.promises.opendir(dir);
+    for await (const entry of handle) {
+      if (++entries > 8000 || Date.now() - started > 10000) stop();
+      const full = path.join(dir, entry.name);
+      // The actual scanners do not follow symlinks either.
+      if (entry.isDirectory()) await inspect(full, depth + 1);
+      else if (entry.isFile() && /\.json$/i.test(entry.name) && mode !== "gif") {
+        const size = (await fs.promises.stat(full)).size;
+        jsonBytes += size;
+        if (size > 20 * 1024 * 1024 || jsonBytes > 100 * 1024 * 1024) stop();
+      } else if (entry.isFile() && /\.gif$/i.test(entry.name) && mode === "gif") {
+        gifBytes += (await fs.promises.stat(full)).size;
+        if (gifBytes > 100 * 1024 * 1024) stop();
+      }
+    }
+  }
+  await inspect(resolved, 0);
+}
+
 function registerIpcHandlers() {
   ipcMain.handle("scan-upload-gifs", async (_event, folder) => {
     try {
+      await validateScanFolder(folder, "gif");
       const files = [];
       async function visit(dir) {
         for (const entry of directoryEntries(dir)) {
@@ -486,7 +518,7 @@ function registerIpcHandlers() {
     return filePaths[0];
   });
   ipcMain.handle("scan-local-catalog", async (_event, rootPath, options) => {
-    try { return { ok: true, ...scanLocalCatalog(rootPath, options) }; }
+    try { await validateScanFolder(rootPath, "catalog"); return { ok: true, ...scanLocalCatalog(rootPath, options) }; }
     catch (error) { return { ok: false, error: error.message || String(error) }; }
   });
 
@@ -506,6 +538,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle("scan-spine-folder", async (_event, sourceDir) => {
     try {
+      await validateScanFolder(sourceDir, "spine");
       if (!sourceDir || !fs.existsSync(sourceDir)) {
         return {
           files: [],
@@ -528,6 +561,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle("scan-naming-issues", async (_event, sourceDir) => {
     try {
+      await validateScanFolder(sourceDir, "naming");
       if (!sourceDir || !fs.existsSync(sourceDir)) return { issues: [], error: "Folder không tồn tại hoặc không thể truy cập." };
       return { issues: scanNamingIssues(sourceDir), error: "" };
     } catch (error) {

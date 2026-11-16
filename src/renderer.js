@@ -1,5 +1,7 @@
 import "./index.css";
 import mascotIcon from "../assets/icon-mascot-transparent.png";
+import mascotSuccess from "../assets/mascot-success-face.png";
+import mascotFail from "../assets/mascot-fail-face.png";
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
 import gifsicle from "gifsicle-wasm-browser";
 import { SpineStage } from "./spineStage.js";
@@ -262,7 +264,7 @@ function elapsedLabel(milliseconds) {
   const seconds = Math.floor(milliseconds / 1000);
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
-async function waitForUploadQueue(jobId, total, spreadsheetId) {
+async function waitForUploadQueue(jobId, total, spreadsheetId, tabLabel = "") {
   const w = state.workspace;
   const startedAt = Date.now();
   const timeoutMs = Math.max(20 * 60 * 1000, (Math.ceil(total / 60) + 5) * 60 * 1000);
@@ -287,6 +289,7 @@ async function waitForUploadQueue(jobId, total, spreadsheetId) {
       : waitingForFirstCommit
         ? `Trigger is processing the first batch · ${completed}/${total} status committed · ${result.queued} queued · elapsed ${elapsed}`
         : `Waiting for trigger (runs every minute) · ${completed}/${total} completed · ${result.queued} queued · elapsed ${elapsed}`;
+    if (tabLabel) w.message = `Tab: ${tabLabel} · ${w.message}`;
     render();
     if (completed >= total) return result;
     await wait(3000);
@@ -446,6 +449,33 @@ function pageNotice() {
   return `${w.error ? `<div class="notice error">${esc(w.error)}</div>` : ""}${w.message ? `<div class="notice ok">${esc(w.message)}</div>` : ""}`;
 }
 
+function showUploadResult(ok, detail, workflow = "catalog") {
+  document.querySelector(".upload-result-dialog")?.close();
+  const dialog = document.createElement("dialog");
+  dialog.className = `upload-result-dialog ${ok ? "success" : "failure"}`;
+  dialog.setAttribute("aria-label", ok ? "Upload thành công" : "Upload thất bại");
+  const title = !ok ? "Tạch rồi con, làm lại đi" : workflow === "upload" ? "Vui chưa con, còn bước cuối nữa" : "Chưa chắc giòn đâu, còn làm tiếp.";
+  const destinations = workflow === "upload" ? [["ownership", "Chuyển Owner"]] : [["export", "Tạo GIF"], ["upload", "Upload GIF"]];
+  dialog.innerHTML = `<div class="result-mascot"><img src="${ok ? mascotSuccess : mascotFail}" alt="Chủ xóm"></div><p class="result-kicker">BÀ CÔ BÁO TIN</p><h2>${title}</h2><p class="result-detail">${esc(detail || "")}</p><div class="result-next-actions">${ok ? destinations.map(([id, label]) => `<button class="primary-action" data-result-module="${id}">${label}</button>`).join("") : `<button class="primary-action" data-result-close>Để con xem lại</button>`}</div>`;
+  dialog.querySelectorAll("button").forEach((button) => {
+    button.onclick = () => {
+      dialog.close();
+      if (button.dataset.resultModule) {
+        state.workspace.message = ""; state.workspace.error = "";
+        state.module = button.dataset.resultModule; render();
+        if (state.module === "export" && state.source && !state.files.length) scan();
+      }
+    };
+  });
+  dialog.addEventListener("click", (event) => {
+    if (event.target !== dialog) return;
+    const bounds = dialog.getBoundingClientRect();
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
+  });
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog); dialog.showModal();
+}
+
 function featureLoginNotice() {
   if (state.google.signedIn) return "";
   const reasons = {
@@ -463,9 +493,9 @@ function renderCatalog() {
   const sheetConfigured = state.google.signedIn && w.sheetUrl;
   const actions = `<div class="module-actions"><button class="danger-action" data-do="clear-catalog" ${!sheetConfigured || w.busy ? "disabled" : ""}>Clear all data</button><button class="copy-sheet-action" data-do="copy-sheet" ${!w.sheetUrl || w.busy ? "disabled" : ""}>Make a copy ↗</button><button class="primary-action" data-do="create-catalog" ${!catalog || !sheetConfigured || w.busy ? "disabled" : ""}>Create / Update Sheet</button></div>`;
   const preview = catalog
-    ? `<div class="catalog-summary"><div><strong>${esc(catalog.rootName)}</strong><span>${catalog.tabs.length} tabs · ${catalog.tabs.reduce((sum, tab) => sum + tab.items.length, 0)} items</span></div>${w.busy ? `<progress max="1" value="${w.progress}"></progress>` : ""}</div><div class="catalog-tabs">${catalog.tabs.map((tab) => `<article><header><div><b>${esc(tab.title)}</b><span>${tab.source === "ui" ? "UI images" : "Animation assets"}</span></div><strong>${tab.items.length}</strong></header><ol>${tab.items.slice(0, 8).map((item) => `<li><span>${esc(item.name)}</span>${item.group ? `<small>${esc(item.group)}</small>` : ""}</li>`).join("")}${tab.items.length > 8 ? `<li class="more">+${tab.items.length - 8} more</li>` : ""}</ol></article>`).join("")}</div>`
+    ? `<div class="catalog-summary"><div><strong>${esc(catalog.rootName)}</strong><span>${catalog.tabs.length} tabs · ${catalog.tabs.reduce((sum, tab) => sum + tab.items.length, 0)} items</span></div>${w.busy ? `<progress max="1" value="${w.progress}"></progress>` : ""}</div><div class="catalog-tabs">${catalog.tabs.map((tab, tabIndex) => `<article><header><div><b>${esc(tab.title)}</b><span>${tab.source === "ui" ? "UI images" : "Animation assets"}</span></div><div class="catalog-tab-actions"><strong>${tab.items.length}</strong><button data-do="upload-catalog-tab" data-tab-index="${tabIndex}" ${!sheetConfigured || w.busy ? "disabled" : ""}>Upload</button></div></header><ol>${tab.items.slice(0, 8).map((item) => `<li><span>${esc(item.name)}</span>${item.group ? `<small>${esc(item.group)}</small>` : ""}</li>`).join("")}${tab.items.length > 8 ? `<li class="more">+${tab.items.length - 8} more</li>` : ""}</ol></article>`).join("")}</div>`
     : `<div class="module-empty"><b>Chưa scan folder local</b><span>Chọn folder gốc chứa *_Animation và *_UI_EN rồi bấm Scan.</span></div>`;
-app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${featureLoginNotice()}${workspaceSettings()}<section class="drive-source"><label><span>Local root folder</span><div><input readonly value="${esc(w.driveUrl)}" placeholder="Chọn folder data hoặc project root..."><button data-do="pick-local-root" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-local" ${!w.driveUrl || w.busy ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan"}</button></div></label></section><section class="workspace-settings catalog-folder-settings"><label><span>Folder Animation</span><input data-workspace="animationFolder" value="${esc(w.animationFolder)}" placeholder="_Animation" ${w.busy ? "disabled" : ""}></label><label><span>Folder UI</span><input data-workspace="uiFolder" value="${esc(w.uiFolder)}" placeholder="_UI_EN" ${w.busy ? "disabled" : ""}></label><p>Nhập tên folder con hoặc phần đuôi tên, ví dụ _Animation khớp 9676_Animation.</p></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
+app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${featureLoginNotice()}${workspaceSettings()}<section class="drive-source"><label><span>Local root folder</span><div><input readonly value="${esc(w.driveUrl)}" placeholder="Chọn folder data hoặc project root..."><button data-do="pick-local-root" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-local" ${!w.driveUrl || w.busy ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan"}</button></div></label></section><section class="workspace-settings catalog-folder-settings"><label><span>Folder Animation</span><input data-workspace="animationFolder" value="${esc(w.animationFolder)}" placeholder="_Animation" ${w.busy ? "disabled" : ""}></label><label><span>Folder UI</span><input data-workspace="uiFolder" value="${esc(w.uiFolder)}" placeholder="_UI_EN" ${w.busy ? "disabled" : ""}></label></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
 }
 
 function renderUpload() {
@@ -476,7 +506,7 @@ function renderUpload() {
   const rows = w.uploadRows.length
     ? `<div class="upload-head"><span>#</span><span>Animation item</span><span>GIF file</span></div>${w.uploadRows.map((row, index) => `<div class="upload-row ${row.status || ""}" data-upload-index="${index}"><span>${esc(row.index)}</span><div><b>${esc(row.name)}</b><small>${esc(row.sheetName || sheet.selected)} · Row ${row.rowNumber} · Preview C${row.rowNumber}</small></div><button class="file-drop ${row.file ? "has-file" : ""}" data-do="pick-upload-file"><input type="file" accept="image/gif" data-upload-file="${index}"><strong>${row.file ? esc(row.file.name) : "Drop GIF or choose file"}</strong><span>${row.status === "done" ? "Uploaded" : row.status === "uploading" ? "Queued / uploading…" : row.status === "failed" ? "Failed" : row.file ? `✓ Đã chọn GIF · ${Math.round(row.file.size / 1024)} KB · Bấm để đổi` : "GIF only"}</span></button>${row.file ? `<button class="remove-upload-gif" data-do="remove-upload-gif" data-index="${index}" title="Bỏ GIF đã chọn" aria-label="Bỏ GIF đã chọn" ${w.busy ? "disabled" : ""}>×</button>` : ""}</div>`).join("")}`
     : `<div class="module-empty"><b>Chưa có animation rows</b><span>Closure Sheet được cấu hình sẵn trong bản build; bấm Load Sheet để bắt đầu.</span></div>`;
-  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Upload GIF</h1><p>Load animation rows, gắn GIF và upload qua queue tự động.</p></div><button class="primary-action" data-do="upload-all" ${canUpload ? "" : "disabled"}>Upload ${selectedCount || ""} GIF</button></header>${featureLoginNotice()}${workspaceSettings()}<section class="upload-controls"><button data-do="load-sheet" ${!state.google.signedIn || !w.sheetUrl || w.busy ? "disabled" : ""}>${w.busy ? "Loading…" : "Load Sheet"}</button></section>${sheet ? `<section class="upload-folder-controls"><label class="batch-gif-picker"><span>Folder GIF · dùng chung GIF output</span><div class="upload-output-path"><input readonly value="${esc(state.output)}" placeholder="Chọn GIF output trong trang Tạo GIF"><button data-do="output" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-upload-output" ${!state.output || w.busy ? "disabled" : ""}>Scan</button></div></label></section>` : ""}${pageNotice()}${w.busy ? `<div class="upload-progress"><span style="width:${Math.max(0.02, w.progress) * 100}%"></span></div>` : ""}<section class="upload-list">${rows}</section></main>`;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Upload GIF</h1><p>Load animation rows, gắn GIF và upload qua queue tự động.</p></div><div class="module-actions"><button class="primary-action" data-do="upload-all" ${canUpload ? "" : "disabled"}>Upload ${selectedCount || ""} GIF</button></div></header>${featureLoginNotice()}${workspaceSettings()}<section class="upload-controls"><button data-do="load-sheet" ${!state.google.signedIn || !w.sheetUrl || w.busy ? "disabled" : ""}>${w.busy ? "Loading…" : "Load Sheet"}</button></section>${sheet ? `<section class="upload-folder-controls"><label class="batch-gif-picker"><span>Folder GIF · dùng chung GIF output</span><div class="upload-output-path"><input readonly value="${esc(state.output)}" placeholder="Chọn GIF output trong trang Tạo GIF"><button data-do="output" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-upload-output" ${!state.output || w.busy ? "disabled" : ""}>Scan</button></div></label></section>` : ""}${pageNotice()}${w.busy ? `<div class="upload-progress"><span style="width:${Math.max(0.02, w.progress) * 100}%"></span></div>` : ""}<section class="upload-list">${rows}</section></main>`;
 }
 
 app.addEventListener("input", (event) => {
@@ -502,13 +532,42 @@ window.spinePreview.onAnimationNotesProgress?.((message) => {
   if (progress) progress.textContent = message;
 });
 
+function positionNotesPopover(button) {
+  const popover = button.querySelector(".note-popover");
+  if (!popover) return;
+  const anchor = button.getBoundingClientRect();
+  const edge = 16;
+  popover.style.position = "fixed";
+  popover.style.bottom = "auto";
+  popover.style.left = "0px";
+  popover.style.top = "0px";
+  const box = popover.getBoundingClientRect();
+  const left = Math.max(edge, Math.min(anchor.left, window.innerWidth - box.width - edge));
+  const above = anchor.top - box.height - 10;
+  const top = above >= edge ? above : Math.min(anchor.bottom + 10, Math.max(edge, window.innerHeight - box.height - edge));
+  popover.style.left = `${left}px`;
+  popover.style.top = `${top}px`;
+}
+app.addEventListener("pointerover", (event) => {
+  const button = event.target.closest(".spine-note-button");
+  if (button) positionNotesPopover(button);
+});
+app.addEventListener("focusin", (event) => {
+  const button = event.target.closest(".spine-note-button");
+  if (button) positionNotesPopover(button);
+});
+window.addEventListener("scroll", () => {
+  const button = app.querySelector(".spine-note-button:hover, .spine-note-button:focus-visible");
+  if (button) positionNotesPopover(button);
+}, true);
+
 function renderAnimationNotes() {
   const n = state.notes;
   if (!n.initialized && state.google.signedIn) loadNotesGames();
   const notesDatabaseLink = /^https:\/\/docs\.google\.com\/spreadsheets\//.test(n.sheetUrl) ? `<section class="workspace-settings"><div class="sheet-link-field"><span>Sheet database gốc</span><a class="closure-sheet-link" href="${esc(n.sheetUrl)}" target="_blank" rel="noopener noreferrer">${esc(n.sheetUrl)} <b aria-hidden="true">↗</b></a></div></section>` : "";
   const groups = new Map();
   n.rows.forEach((row, index) => { if (!groups.has(row.fileId)) groups.set(row.fileId, []); groups.get(row.fileId).push({ row, index }); });
-  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Sổ tay animation</h1><p>Hướng dẫn gọi animation cho dev · mỗi game một tab database.</p></div></header>${featureLoginNotice()}${notesDatabaseLink}<section class="workspace-settings notes-new-game"><div class="notes-new-game-heading"><h2>Tạo game mới / cập nhật asset</h2><p>Nhập folder Drive và game ID để tạo tab mới hoặc cập nhật danh sách animation cho game đã có.</p></div><label><span>Folder Drive</span><input data-notes-field="driveUrl" value="${esc(n.driveUrl)}" ${n.busy ? "disabled" : ""}></label><label><span>Game ID · tên tab</span><input data-notes-field="gameId" value="${esc(n.gameId)}" ${n.busy ? "disabled" : ""}></label><div class="module-actions"><button class="copy-sheet-action" data-do="notes-scan" ${n.busy || !n.driveUrl || !n.gameId || !state.google.signedIn ? "disabled" : ""}>Scan</button></div></section><section class="workspace-settings notes-database-controls"><div class="notes-games-field"><span>Game có sẵn trên database</span><div class="notes-game-list">${n.games.map((id) => `<button class="notes-game-button ${id === n.gameId ? "selected" : ""}" data-do="choose-notes-game" data-game="${esc(id)}" ${n.busy || n.saving ? "disabled" : ""}>${esc(id)}</button>`).join("")}</div></div></section><section class="catalog-preview">${n.busy ? `<div class="notice" data-notes-progress>Đang xử lý…</div>` : ""}${n.error ? `<div class="notice error">${esc(n.error)}</div>` : ""}<div class="notes-spine-list">${Array.from(groups.values()).map((items) => { const noted = items.filter(({row}) => row.note?.trim()); const general = items[0].row.general?.trim(); return `<button class="note-chip spine-note-button ${noted.length || general ? "noted" : ""}" data-do="open-spine-notes" data-index="${items[0].index}"><strong>${esc(items[0].row.name)}</strong>${noted.length || general ? `<span class="note-popover">${general ? `<span class="note-preview-line"><b>Ghi chú Spine</b><span>${esc(general)}</span></span>` : ""}${noted.map(({row}) => `<span class="note-preview-line"><b>${esc(row.animation)}</b><span>${esc(row.note)}</span></span>`).join("")}</span>` : ""}</button>`; }).join("")}</div></section></main>`;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Sổ tay animation</h1><p>Hướng dẫn gọi animation cho dev · mỗi game một tab database.</p></div></header>${featureLoginNotice()}${notesDatabaseLink}<section class="notes-guidance"><h2>Khi nào cần ghi chú?</h2><p class="notes-guidance-question">Bạn có thể ghi chú các Spine đặc thù của game xuất hiện ở giao diện nào và khi nào. Các animation thông dụng có thể để trống.</p></section><section class="workspace-settings notes-new-game"><div class="notes-new-game-heading"><h2>Tạo game mới / cập nhật asset</h2><p>Nhập folder Drive và game ID để tạo tab mới hoặc cập nhật danh sách animation cho game đã có.</p></div><label><span>Folder Drive</span><input data-notes-field="driveUrl" value="${esc(n.driveUrl)}" ${n.busy ? "disabled" : ""}></label><label><span>Game ID · tên tab</span><input data-notes-field="gameId" value="${esc(n.gameId)}" ${n.busy ? "disabled" : ""}></label><div class="module-actions"><button class="copy-sheet-action" data-do="notes-scan" ${n.busy || !n.driveUrl || !n.gameId || !state.google.signedIn ? "disabled" : ""}>Scan</button></div></section><section class="workspace-settings notes-database-controls"><div class="notes-games-field"><span>Game có sẵn trên database</span><div class="notes-game-list">${n.games.map((id) => `<button class="notes-game-button ${id === n.gameId ? "selected" : ""}" data-do="choose-notes-game" data-game="${esc(id)}" ${n.busy || n.saving ? "disabled" : ""}>${esc(id)}</button>`).join("")}</div></div></section><section class="catalog-preview">${n.busy ? `<div class="notice" data-notes-progress>Đang xử lý…</div>` : ""}${n.error ? `<div class="notice error">${esc(n.error)}</div>` : ""}<div class="notes-spine-list">${Array.from(groups.values()).map((items) => { const noted = items.filter(({row}) => row.note?.trim()); const general = items[0].row.general?.trim(); return `<button class="note-chip spine-note-button ${noted.length || general ? "noted" : ""}" data-do="open-spine-notes" data-index="${items[0].index}"><strong>${esc(items[0].row.name)}</strong>${noted.length || general ? `<span class="note-popover">${general ? `<span class="note-preview-line"><b>Ghi chú Spine</b><span>${esc(general)}</span></span>` : ""}${noted.map(({row}) => `<span class="note-preview-line"><b>${esc(row.animation)}</b><span>${esc(row.note)}</span></span>`).join("")}</span>` : ""}</button>`; }).join("")}</div></section></main>`;
 }
 
 function renderOwnership() {
@@ -1000,7 +1059,11 @@ app.addEventListener("click", async (e) => {
     return;
   }
   const a = b.dataset.do;
-  if (a === "choose-notes-game") {
+  if (a === "test-upload-success") {
+    showUploadResult(true, "Đã upload xong tab: Symbols · 20 ảnh. Đây là thông báo thử.");
+  } else if (a === "test-upload-fail") {
+    showUploadResult(false, "Không kết nối được Google Sheets. Đây là thông báo thử, dữ liệu không bị thay đổi.");
+  } else if (a === "choose-notes-game") {
     const n = state.notes;
     if (n.busy || n.saving) return;
     n.gameId = b.dataset.game; n.rows = []; n.busy = true; n.error = ""; n.message = ""; render();
@@ -1118,11 +1181,15 @@ app.addEventListener("click", async (e) => {
     const result = await window.spinePreview.openFolder(b.dataset.folder);
     if (!result?.ok) { state.naming.error = result?.error || "Không mở được folder."; render(); }
   } else if (a === "switch-module") {
+    state.workspace.message = "";
+    state.workspace.error = "";
     if (state.module === "export") destroyStage();
     state.module = b.dataset.module;
     render();
     if (state.module === "export" && state.source && !state.files.length) scan();
   } else if (a === "back-home") {
+    state.workspace.message = "";
+    state.workspace.error = "";
     if (state.module === "export") destroyStage();
     state.module = "home";
     render();
@@ -1145,6 +1212,8 @@ app.addEventListener("click", async (e) => {
     if (folder) {
       state.workspace.driveUrl = folder;
       state.workspace.catalog = null;
+      state.workspace.message = "";
+      state.workspace.error = "";
       localStorage.setItem("closure-local-root", folder);
       render();
     }
@@ -1176,18 +1245,23 @@ app.addEventListener("click", async (e) => {
     if (result?.ok) w.message = "Đã xoá toàn bộ dữ liệu và tab; Sheet hiện còn một tab trắng mặc định.";
     else w.error = result?.error || "Không thể xoá dữ liệu trong Sheet.";
     render();
-  } else if (a === "create-catalog") {
+  } else if (a === "create-catalog" || a === "upload-catalog-tab") {
     const w = state.workspace;
-    w.busy = true; w.progress = 0; w.error = ""; w.message = "";
+    if (w.busy || !w.catalog || !state.google.signedIn) return;
+    const tab = a === "upload-catalog-tab" ? w.catalog.tabs[Number(b.dataset.tabIndex)] : null;
+    if (a === "upload-catalog-tab" && !tab) return;
+    const uploadCatalog = tab ? { ...w.catalog, tabs: [tab] } : w.catalog;
+    const uploadTabLabel = uploadCatalog.tabs.map((item) => item.title).join(", ");
+    w.busy = true; w.progress = 0; w.error = ""; w.message = `Đang cập nhật tab: ${uploadTabLabel}…`;
     render();
-    const result = await window.spinePreview.createCatalog(w.sheetUrl, w.catalog);
+    const result = await window.spinePreview.createCatalog(w.sheetUrl, uploadCatalog);
     if (!result?.ok) {
       w.error = result?.error || "Không tạo được Sheet catalog.";
     } else {
-      const images = w.catalog.tabs.flatMap((tab) => tab.items.map((item, index) => ({ ...item, tab: tab.title, row: index + 2 }))).filter((item) => item.kind === "image");
+      const images = uploadCatalog.tabs.flatMap((tab) => tab.items.map((item, index) => ({ ...item, tab: tab.title, row: index + 2 }))).filter((item) => item.kind === "image");
       try {
         if (images.length) {
-          w.message = `Preparing ${images.length} local images…`;
+          w.message = `Tab: ${uploadTabLabel} · Đang chuẩn bị ${images.length} ảnh…`;
           render();
           const queued = await window.spinePreview.queueImages({
             spreadsheetId: result.spreadsheetId,
@@ -1199,16 +1273,17 @@ app.addEventListener("click", async (e) => {
             })),
           });
           if (!queued?.ok) throw new Error(queued?.error || "Không tạo được image upload queue.");
-          const completed = await waitForUploadQueue(queued.jobId, queued.total, result.spreadsheetId);
+          const completed = await waitForUploadQueue(queued.jobId, queued.total, result.spreadsheetId, uploadTabLabel);
           if (completed.error) throw new Error(completed.errors.slice(0, 3).join(" · "));
         }
-        w.message = `Completed · ${result.tabs} tabs updated · ${images.length} local images uploaded.`;
+        w.message = `Đã upload xong tab: ${uploadCatalog.tabs.map((item) => item.title).join(", ")} · ${images.length} ảnh.`;
       } catch (error) {
         w.error = error.message || String(error);
       }
     }
     w.busy = false; w.progress = 0;
     render();
+    showUploadResult(!w.error, w.error || w.message);
   } else if (a === "load-sheet") {
     const w = state.workspace;
     w.busy = true; w.error = ""; w.message = ""; render();
@@ -1247,6 +1322,7 @@ app.addEventListener("click", async (e) => {
     w.progress = 0;
     if (!w.error) w.message = `Completed · ${queue.length} GIF uploaded to ${w.sheet.selected}.`;
     render();
+    showUploadResult(!w.error, w.error || `Đã upload ${queue.length} GIF lên Sheet.`, "upload");
   } else if (a === "pick-naming-folder") {
     const folder = await window.spinePreview.selectFolder();
     if (folder) { state.naming.folder = folder; localStorage.setItem("naming-folder", folder); render(); }

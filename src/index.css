@@ -1417,6 +1417,8 @@ body[data-module="ownership"] .ownership-form .notice { grid-column: 1 / -1; mar
 
 .gif-group-list .edit-gif-group { padding: 5px 10px; border: 1px solid #6c8e80; border-radius: 7px; color: #d9ecdf; font-size: 12px; background: #314a3f; }
 
+.owner-email-control { display: flex; align-items: center; gap: 12px; }.owner-email-control input { flex: 1; min-width: 0; }.owner-email-control input[readonly] { background: #23282c; color: #d3e0d8; cursor: default; }.owner-email-control button { flex-shrink: 0; height: 44px; }
+
 /* The neighborhood toolbox: readable type and four distinct doorways. */
 .feature-hero small { color: #c4df9b; font-size: 12px; letter-spacing: .2em; }
 .feature-hero h1 { font-size: clamp(32px, 3.5vw, 52px); letter-spacing: -.035em; line-height: 1.2; margin: 12px 0 0; color: #f1f2e9; }

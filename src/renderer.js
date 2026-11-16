@@ -620,7 +620,7 @@ function renderAnimationNotes() {
 
 function renderOwnership() {
   const o = state.ownership;
-  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Chuyển owner</h1><p>Chuyển Sheet hoặc folder asset sang tài khoản quản lý cùng công ty.</p></div></header>${featureLoginNotice()}<section class="workspace-settings ownership-form"><label><span>Email chủ sở hữu mới · dùng chung</span><input data-owner-field="email" type="email" value="${esc(o.email)}" ${o.busy ? "disabled" : ""}></label></section>${[["sheet","sheetUrl","Google Sheet"],["folder","driveUrl","Folder Drive chứa asset"]].map(([kind,key,title]) => `<section class="workspace-settings ownership-form"><h2>${title}</h2><label><span>Đường dẫn ${title}</span><input data-owner-field="${key}" value="${esc(o[key])}" ${o.busy ? "disabled" : ""}></label><div class="module-actions"><button class="primary-action" data-do="transfer-owner" data-kind="${kind}" ${o.busy || !o.email || !o[key] || !state.google.signedIn ? "disabled" : ""}>${o.busy && o.activeKind === kind ? "Đang chuyển…" : `Chuyển owner ${kind === "sheet" ? "Sheet" : "folder"}`}</button>${o.busy && o.activeKind === kind ? `<button class="danger-action" data-do="cancel-transfer-owner" ${o.cancelling ? "disabled" : ""}>${o.cancelling ? "Đang dừng…" : "Cancel"}</button>` : ""}</div>${o.activeKind === kind ? `${o.busy ? `<div class="notice">${o.cancelling ? "Đang dừng sau mục hiện tại. Các mục đã chuyển vẫn giữ nguyên." : "Đang chuyển quyền. Có thể Cancel để dừng trước mục tiếp theo."}</div>` : ""}${o.message ? `<div class="notice ok">${esc(o.message)}</div>` : ""}${o.error ? `<div class="notice error">${esc(o.error)}</div>` : ""}${o.results.some((item) => item.ok && item.isFolder) ? `<div class="owner-transferred-folders"><h3>Folder đã chuyển thành công</h3><ul>${o.results.filter((item) => item.ok && item.isFolder).map((item) => `<li>${esc(item.displayPath || item.name)}</li>`).join("")}</ul></div>` : ""}` : ""}</section>`).join("")}</main>`;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Chuyển owner</h1><p>Chuyển Sheet hoặc folder asset sang tài khoản quản lý cùng công ty.</p></div></header>${featureLoginNotice()}<section class="workspace-settings ownership-form"><label><span>Email chủ sở hữu mới · dùng chung</span><div class="owner-email-control"><input data-owner-field="email" type="email" required value="${esc(o.email)}" ${!o.editingEmail ? "readonly" : ""} ${o.busy ? "disabled" : ""}><button type="button" class="copy-sheet-action" data-do="${o.editingEmail ? "lock-owner-email" : "edit-owner-email"}" ${o.busy ? "disabled" : ""}>${o.editingEmail ? "Lưu" : "Edit"}</button></div></label></section>${[["sheet","sheetUrl","Google Sheet"],["folder","driveUrl","Folder Drive chứa asset"]].map(([kind,key,title]) => `<section class="workspace-settings ownership-form"><h2>${title}</h2><label><span>Đường dẫn ${title}</span><input data-owner-field="${key}" value="${esc(o[key])}" ${o.busy ? "disabled" : ""}></label><div class="module-actions"><button class="primary-action" data-do="transfer-owner" data-kind="${kind}" ${o.busy || o.editingEmail || !o.email || !o[key] || !state.google.signedIn ? "disabled" : ""}>${o.busy && o.activeKind === kind ? "Đang chuyển…" : `Chuyển owner ${kind === "sheet" ? "Sheet" : "folder"}`}</button>${o.busy && o.activeKind === kind ? `<button class="danger-action" data-do="cancel-transfer-owner" ${o.cancelling ? "disabled" : ""}>${o.cancelling ? "Đang dừng…" : "Cancel"}</button>` : ""}</div>${o.activeKind === kind ? `${o.busy ? `<div class="notice">${o.cancelling ? "Đang dừng sau mục hiện tại. Các mục đã chuyển vẫn giữ nguyên." : "Đang chuyển quyền. Có thể Cancel để dừng trước mục tiếp theo."}</div>` : ""}${o.message ? `<div class="notice ok">${esc(o.message)}</div>` : ""}${o.error ? `<div class="notice error">${esc(o.error)}</div>` : ""}${o.results.some((item) => item.ok && item.isFolder) ? `<div class="owner-transferred-folders"><h3>Folder đã chuyển thành công</h3><ul>${o.results.filter((item) => item.ok && item.isFolder).map((item) => `<li>${esc(item.displayPath || item.name)}</li>`).join("")}</ul></div>` : ""}` : ""}</section>`).join("")}</main>`;
 }
 
 function renderNaming() {
@@ -1261,6 +1261,16 @@ app.addEventListener("click", async (e) => {
       w.message = `Tìm thấy ${result.files.length} GIF · đã map ${matched} hàng.${duplicate.size ? ` Bỏ qua ${duplicate.size} tên trùng.` : ""}`;
     } catch (error) { w.error = error.message; }
     finally { w.busy = false; render(); }
+  } else if (a === "edit-owner-email") {
+    if (state.ownership.busy) return;
+    state.ownership.editingEmail = true; render();
+    app.querySelector('[data-owner-field="email"]')?.focus();
+  } else if (a === "lock-owner-email") {
+    const input = app.querySelector('[data-owner-field="email"]');
+    if (!input?.value.trim() || !input.reportValidity()) return;
+    state.ownership.email = input.value.trim();
+    localStorage.setItem("ownership-recipient-email", state.ownership.email);
+    state.ownership.editingEmail = false; render();
   } else if (a === "cancel-transfer-owner") {
     const o = state.ownership;
     if (!o.busy || o.cancelling) return;
@@ -1617,6 +1627,7 @@ app.addEventListener("change", (e) => {
   }
   if (t.dataset.ownerField) {
     state.ownership[t.dataset.ownerField] = t.value.trim();
+    if (t.dataset.ownerField === "email" && state.ownership.editingEmail) return;
     if (t.dataset.ownerField === "email" && t.validity.valid && t.value.trim()) localStorage.setItem("ownership-recipient-email", t.value.trim());
     render();
     return;

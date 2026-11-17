@@ -285,9 +285,9 @@ async function createSourceTab(spreadsheetId, folderUrl, token) {
   await json(`${base}:batchUpdate`, {method:"POST",headers,body:JSON.stringify({requests:[{unmergeCells:{range:{sheetId,startColumnIndex:0,endColumnIndex:4}}}]})});
   await json(`${base}/values/${encodeURIComponent("'SOURCE'!A:D")}:clear`, {method:"POST",headers,body:"{}"});
   const values = [["No","Description","Status","Note / Link"],["PSD","","",""]];
-  for (let i=0;i<psdCount;i++) values.push([i+1,links.PSD[i]?.name || "","",i === 0 ? sourceFolders.PSD?.name || "" : ""]);
+  for (let i=0;i<psdCount;i++) values.push([i+1,links.PSD[i]?.name || "",links.PSD[i] ? "DONE" : "",i === 0 ? sourceFolders.PSD?.name || "" : ""]);
   values.push(["SPINE","","",""]);
-  for (let i=0;i<spineCount;i++) values.push([i+1,links.SPINE[i]?.name || "","",i === 0 ? sourceFolders.SPINE?.name || "" : ""]);
+  for (let i=0;i<spineCount;i++) values.push([i+1,links.SPINE[i]?.name || "",links.SPINE[i] ? "DONE" : "",i === 0 ? sourceFolders.SPINE?.name || "" : ""]);
   await json(`${base}/values/${encodeURIComponent("'SOURCE'!A1")}?valueInputOption=RAW`, {method:"PUT",headers,body:JSON.stringify({values})});
   const range = (r1,r2,c1=0,c2=4) => ({sheetId,startRowIndex:r1,endRowIndex:r2,startColumnIndex:c1,endColumnIndex:c2});
   const requests = [
@@ -297,6 +297,7 @@ async function createSourceTab(spreadsheetId, folderUrl, token) {
     ...[[1,2],[spineHeader,spineHeader+1]].flatMap(([a,b]) => [{mergeCells:{range:range(a,b),mergeType:"MERGE_ALL"}},{repeatCell:{range:range(a,b),cell:{userEnteredFormat:{horizontalAlignment:"CENTER",textFormat:{bold:true,italic:true,fontSize:22}}},fields:"userEnteredFormat(horizontalAlignment,textFormat)"}}]),
     ...[[2,spineHeader,"PSD"],[spineHeader+1,rowCount,"SPINE"]].flatMap(([a,b,type]) => [
       {repeatCell:{range:range(a,b,0,1),cell:{userEnteredFormat:{textFormat:{fontSize:10}}},fields:"userEnteredFormat.textFormat.fontSize"}},
+      {repeatCell:{range:range(a,b,2,3),cell:{userEnteredFormat:{textFormat:{fontSize:10}}},fields:"userEnteredFormat.textFormat.fontSize"}},
       {mergeCells:{range:range(a,b,3,4),mergeType:"MERGE_ALL"}},
       ...(sourceFolders[type] ? [{repeatCell:{range:range(a,b,3,4),cell:{userEnteredFormat:{textFormat:{link:{uri:`https://drive.google.com/drive/folders/${sourceFolders[type].id}`},underline:true,foregroundColor:{red:.1,green:.3,blue:.85}}}},fields:"userEnteredFormat.textFormat"}}] : []),
       {repeatCell:{range:range(a,b,2,3),cell:{userEnteredFormat:{backgroundColor:{red:.72,green:.87,blue:.81},horizontalAlignment:"CENTER"},dataValidation:{condition:{type:"ONE_OF_LIST",values:[{userEnteredValue:"DONE"}]},showCustomUi:true,strict:true}},fields:"userEnteredFormat(backgroundColor,horizontalAlignment),dataValidation"}},

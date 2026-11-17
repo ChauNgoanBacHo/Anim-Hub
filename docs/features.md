@@ -15,7 +15,7 @@ Bấm Scan, xem tiến trình folder/file và thời gian hoàn tất. **Create 
 
 ### Tab SOURCE (optional)
 
-Section UI có ô Link folder source không bắt buộc. Khi có link và upload UI, app tạo/cập nhật tab `SOURCE` và đưa lên đầu Sheet: No, Description, Status, Note / Link; PSD 7 dòng, SPINE 3 dòng. Dòng không có file để trống; Status để trống, Status có dropdown DONE nền xanh. Description liệt kê từng file source có hyperlink riêng. Note / Link merge toàn bộ các dòng mỗi nhóm, ghi tên và link folder PSD/SPINE tương ứng; không có folder thì để trống. Đọc file trực tiếp trong `*-PSD` / `*-SPINE` của ArtSource hoặc nhập thẳng folder nhóm. Giữ tối thiểu PSD 7 dòng/SPINE 3 dòng, tự tăng nếu nhiều file hơn. Update sẽ dựng lại tab SOURCE; để trống input thì không đụng tab này.
+Section UI có ô Link folder source không bắt buộc. Khi có link và upload UI, app tạo/cập nhật tab `SOURCE` và đưa lên đầu Sheet: No, Description, Status, Note / Link; PSD 7 dòng, SPINE 3 dòng. Dòng có file tự điền Status DONE, dòng không có file để trống; Status có dropdown DONE nền xanh. Description liệt kê từng file source có hyperlink riêng. Note / Link merge toàn bộ các dòng mỗi nhóm, ghi tên và link folder PSD/SPINE tương ứng; không có folder thì để trống. Đọc file trực tiếp trong `*-PSD` / `*-SPINE` của ArtSource hoặc nhập thẳng folder nhóm. Giữ tối thiểu PSD 7 dòng/SPINE 3 dòng, tự tăng nếu nhiều file hơn. Update sẽ dựng lại tab SOURCE; để trống input thì không đụng tab này.
 
 ### Định dạng Sheet
 

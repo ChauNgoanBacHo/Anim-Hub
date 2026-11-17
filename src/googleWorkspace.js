@@ -498,6 +498,34 @@ async function clearCatalog() {
 }
 
 const ownerTransfers = new Map();
+async function browseDriveFolders({ folderId = "shared", pageToken = "", search = "" } = {}) {
+  if (!["root", "shared"].includes(folderId) && !/^[\w-]+$/.test(folderId)) throw new Error("Folder ID không hợp lệ.");
+  const token = await accessToken();
+  const searchName = String(search).trim().slice(0,200).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const params = new URLSearchParams({ q:`trashed=false and mimeType='application/vnd.google-apps.folder' and ${folderId === "shared" ? "sharedWithMe=true" : `'${folderId}' in parents`}${searchName ? ` and name contains '${searchName}'` : ""}`, fields:"nextPageToken,files(id,name)", orderBy:"name_natural", pageSize:"100", supportsAllDrives:"true", includeItemsFromAllDrives:"true" });
+  if (pageToken) params.set("pageToken", pageToken);
+  return json(`https://www.googleapis.com/drive/v3/files?${params}`, { headers:{ Authorization:`Bearer ${token}` } });
+}
+
+async function moveSheetToFolder(payload) {
+  const sheetId = idFrom(payload.sheetUrl, "sheet");
+  const folderId = idFrom(payload.folderUrl, "folder");
+  if (!sheetId || !folderId) throw new Error("Nhập link Sheet và folder Drive hợp lệ.");
+  const token = await accessToken();
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const base = "https://www.googleapis.com/drive/v3/files";
+  const folder = await json(`${base}/${folderId}?fields=id,name,mimeType&supportsAllDrives=true`, { headers });
+  if (folder.mimeType !== "application/vnd.google-apps.folder") throw new Error("Link đích phải là folder Drive.");
+  const sheet = await json(`${base}/${sheetId}?fields=id,name,mimeType,parents&supportsAllDrives=true`, { headers });
+  if (sheet.mimeType !== "application/vnd.google-apps.spreadsheet") throw new Error("Link nguồn phải là Google Sheet.");
+  if (!sheet.parents?.includes(folderId)) {
+    const params = new URLSearchParams({ addParents:folderId, supportsAllDrives:"true", fields:"id,name,parents" });
+    if (sheet.parents?.length) params.set("removeParents", sheet.parents.join(","));
+    await json(`${base}/${sheetId}?${params}`, { method:"PATCH", headers, body:"{}" });
+  }
+  return { name:sheet.name, folderName:folder.name };
+}
+
 async function transferOwnership(payload, control) {
   const sheetId = idFrom(payload.sheetUrl, "sheet");
   const folderId = idFrom(payload.driveUrl, "folder");
@@ -663,6 +691,8 @@ export function registerGoogleWorkspaceHandlers(ipcMain) {
   ipcMain.handle("workspace-google-status", wrap(status));
   ipcMain.handle("workspace-google-sign-in", wrap(signIn));
   ipcMain.handle("workspace-google-sign-out", async () => { const store = readStore(); delete store.tokens; delete store.user; writeStore(store); return { ok: true }; });
+  ipcMain.handle("workspace-browse-folders", wrap(browseDriveFolders));
+  ipcMain.handle("workspace-move-sheet", wrap(moveSheetToFolder));
   ipcMain.handle("workspace-create-catalog", wrap(createCatalog));
   ipcMain.handle("workspace-cancel-catalog", wrap(cancelCatalogOperation));
   ipcMain.handle("workspace-finish-catalog", (_event,id) => { catalogOperations.delete(id); return {ok:true}; });

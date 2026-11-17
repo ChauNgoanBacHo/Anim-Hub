@@ -48,7 +48,7 @@ const state = {
   search: "",
   module: "home",
   notes: { driveUrl: "", gameId: "", rows: [], busy: false, message: "", error: "", sheetUrl: "", dirty: false, games: [], initialized: false, saving: false, revision: 0, onlyNoted: false },
-  ownership: { sheetUrl: "", driveUrl: "", email: localStorage.getItem("ownership-recipient-email") || "owner@enotion.io", busy: false, message: "", error: "", results: [] },
+  ownership: { sheetUrl: "", moveSheetUrl: "", moveFolderUrl: "", driveUrl: "", email: localStorage.getItem("ownership-recipient-email") || "owner@enotion.io", busy: false, message: "", error: "", results: [] },
   google: { configured: false, signedIn: false, user: null, busy: false },
   workspace: {
     driveUrl: localStorage.getItem("closure-local-root") || "",
@@ -619,9 +619,48 @@ function renderAnimationNotes() {
   app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Sổ tay animation</h1><p>Hướng dẫn gọi animation cho dev · mỗi game một tab database.</p></div></header>${featureLoginNotice()}${notesDatabaseLink}<section class="notes-guidance"><h2>Khi nào cần ghi chú?</h2><p class="notes-guidance-question">Bạn có thể ghi chú các Spine đặc thù của game xuất hiện ở giao diện nào và khi nào. Các animation thông dụng có thể để trống.</p></section><section class="workspace-settings notes-new-game"><div class="notes-new-game-heading"><h2>Tạo game mới / cập nhật asset</h2><p>Nhập folder Drive và game ID để tạo tab mới hoặc cập nhật danh sách animation cho game đã có.</p></div><label><span>Folder Drive</span><input data-notes-field="driveUrl" value="${esc(n.driveUrl)}" ${n.busy ? "disabled" : ""}></label><label><span>Game ID · tên tab</span><input data-notes-field="gameId" value="${esc(n.gameId)}" ${n.busy ? "disabled" : ""}></label><div class="module-actions"><button class="copy-sheet-action" data-do="notes-scan" ${n.busy || !n.driveUrl || !n.gameId || !state.google.signedIn ? "disabled" : ""}>Scan</button></div></section><section class="workspace-settings notes-database-controls"><div class="notes-games-field"><span>Game có sẵn trên database</span><div class="notes-game-list">${n.games.map((id) => `<button class="notes-game-button ${id === n.gameId ? "selected" : ""}" data-do="choose-notes-game" data-game="${esc(id)}" ${n.busy || n.saving ? "disabled" : ""}>${esc(id)}</button>`).join("")}</div></div></section><section class="catalog-preview">${n.busy ? `<div class="notice" data-notes-progress>Đang xử lý…</div>` : ""}${n.error ? `<div class="notice error">${esc(n.error)}</div>` : ""}<div class="notes-spine-list">${Array.from(groups.values()).map((items) => { const noted = items.filter(({row}) => row.note?.trim()); const general = items[0].row.general?.trim(); return `<button class="note-chip spine-note-button ${noted.length || general ? "noted" : ""}" data-do="open-spine-notes" data-index="${items[0].index}"><strong>${esc(items[0].row.name)}</strong>${noted.length || general ? `<span class="note-popover">${general ? `<span class="note-preview-line"><b>Ghi chú Spine</b><span>${esc(general)}</span></span>` : ""}${noted.map(({row}) => `<span class="note-preview-line"><b>${esc(row.animation)}</b><span>${esc(row.note)}</span></span>`).join("")}</span>` : ""}</button>`; }).join("")}</div></section></main>`;
 }
 
+function chooseDriveFolder() {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "drive-folder-dialog";
+    let trail = [{id:"shared",name:"Được chia sẻ với tôi"}], folders = [], nextPage = "", busy = false, error = "", search = "";
+    dialog.addEventListener("close", () => { dialog.remove(); resolve(dialog.returnValue || ""); }, {once:true});
+    dialog.addEventListener("click", (event) => { if (event.target === dialog) { const r = dialog.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dialog.close(); } });
+    function paint() {
+      const current = trail[trail.length - 1];
+      dialog.innerHTML = `<header><h2 id="drive-picker-title">Chọn folder Drive</h2><button data-close aria-label="Đóng">×</button></header><form class="drive-picker-search"><input aria-label="Tìm tên folder" placeholder="Tìm folder trong ${trail.length === 1 ? "Được chia sẻ với tôi" : "folder hiện tại"}…" value="${esc(search)}"><button class="copy-sheet-action" type="submit" ${busy ? "disabled" : ""}>Tìm</button></form><nav class="drive-picker-breadcrumb" aria-label="Đường dẫn folder">${trail.map((folder,index) => `<button data-crumb="${index}" ${busy ? "disabled" : ""}>${esc(folder.name)}</button>`).join("<span>›</span>")}</nav><div class="drive-picker-list" aria-busy="${busy}">${error ? `<p class="drive-picker-error" role="alert">${esc(error)}</p>` : ""}${folders.map((folder,index) => `<button data-folder="${index}" ${busy ? "disabled" : ""}>${icon("folder")}<span>${esc(folder.name)}</span><span>›</span></button>`).join("")}${busy ? `<p role="status">Đang tải folder…</p>` : !folders.length && !error ? `<p>${search ? "Không tìm thấy folder phù hợp." : "Không có folder con."}</p>` : ""}${nextPage ? `<button data-more ${busy ? "disabled" : ""}>Tải thêm folder</button>` : ""}</div><div class="drive-picker-actions"><span>${current.id === "shared" ? "Mở một folder để chọn." : `Folder đang chọn: ${esc(current.name)}`}</span><div><button class="copy-sheet-action" data-close>Huỷ</button><button class="primary-action" data-select ${busy || error || current.id === "shared" ? "disabled" : ""}>Chọn folder này</button></div></div>`;
+    }
+    async function load(more = false) {
+      busy = true; error = ""; if (!more) { folders = []; nextPage = ""; } paint();
+      try {
+        const result = await window.spinePreview.browseDriveFolders({folderId:trail[trail.length - 1].id,pageToken:more ? nextPage : "", search});
+        if (!result?.ok) throw new Error(result?.error || "Không tải được folder Drive.");
+        folders.push(...(result.files || [])); nextPage = result.nextPageToken || "";
+      } catch (err) { error = err.message; }
+      finally { busy = false; if (dialog.open) paint(); }
+    }
+    dialog.addEventListener("submit", (event) => {
+      event.preventDefault(); if (busy) return;
+      search = dialog.querySelector(".drive-picker-search input").value.trim(); load();
+    });
+    dialog.addEventListener("click", (event) => {
+      const button = event.target.closest("button"); if (!button || button.disabled) return;
+      if (button.hasAttribute("data-close")) { dialog.close(); return; }
+      if (busy) return;
+      if (button.hasAttribute("data-select")) dialog.close(`https://drive.google.com/drive/folders/${trail[trail.length - 1].id}`);
+      else if (button.dataset.root) { trail = [{id:button.dataset.root,name:button.dataset.root === "root" ? "Drive của tôi" : "Được chia sẻ với tôi"}]; load(); }
+      else if (button.dataset.crumb !== undefined) { trail = trail.slice(0,Number(button.dataset.crumb)+1); search = ""; load(); }
+      else if (button.dataset.folder !== undefined) { trail.push(folders[Number(button.dataset.folder)]); search = ""; load(); }
+      else if (button.hasAttribute("data-more")) load(true);
+    });
+    dialog.setAttribute("aria-labelledby", "drive-picker-title");
+    document.body.append(dialog); paint(); dialog.showModal(); load();
+  });
+}
+
 function renderOwnership() {
   const o = state.ownership;
-  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Chuyển owner</h1><p>Chuyển Sheet hoặc folder asset sang tài khoản quản lý cùng công ty.</p></div></header>${featureLoginNotice()}<section class="workspace-settings ownership-form"><label><span>Email chủ sở hữu mới · dùng chung</span><div class="owner-email-control"><input data-owner-field="email" type="email" required value="${esc(o.email)}" ${!o.editingEmail ? "readonly" : ""} ${o.busy ? "disabled" : ""}><button type="button" class="copy-sheet-action" data-do="${o.editingEmail ? "lock-owner-email" : "edit-owner-email"}" ${o.busy ? "disabled" : ""}>${o.editingEmail ? "Lưu" : "Edit"}</button></div></label></section>${[["sheet","sheetUrl","Google Sheet"],["folder","driveUrl","Folder Drive chứa asset"]].map(([kind,key,title]) => `<section class="workspace-settings ownership-form"><h2>${title}</h2><label><span>Đường dẫn ${title}</span><input data-owner-field="${key}" value="${esc(o[key])}" ${o.busy ? "disabled" : ""}></label><div class="module-actions"><button class="primary-action" data-do="transfer-owner" data-kind="${kind}" ${o.busy || o.editingEmail || !o.email || !o[key] || !state.google.signedIn ? "disabled" : ""}>${o.busy && o.activeKind === kind ? "Đang chuyển…" : `Chuyển owner ${kind === "sheet" ? "sheet" : "folder"}`}</button>${o.busy && o.activeKind === kind ? `<button class="danger-action" data-do="cancel-transfer-owner" ${o.cancelling ? "disabled" : ""}>${o.cancelling ? "Đang dừng…" : "Cancel"}</button>` : ""}</div>${o.activeKind === kind ? `${o.busy ? `<div class="notice">${o.cancelling ? "Đang dừng sau mục hiện tại. Các mục đã chuyển vẫn giữ nguyên." : "Đang chuyển quyền. Có thể Cancel để dừng trước mục tiếp theo."}</div>` : ""}${o.message ? `<div class="notice ok">${esc(o.message)}</div>` : ""}${o.error ? `<div class="notice error">${esc(o.error)}</div>` : ""}${o.results.some((item) => item.ok && item.isFolder) ? `<div class="owner-transferred-folders"><h3>Folder đã chuyển thành công</h3><ul>${o.results.filter((item) => item.ok && item.isFolder).map((item) => `<li>${esc(item.displayPath || item.name)}</li>`).join("")}</ul></div>` : ""}` : ""}</section>`).join("")}</main>`;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Chuyển owner</h1><p>Chuyển Sheet hoặc folder asset sang tài khoản quản lý cùng công ty.</p></div></header>${featureLoginNotice()}<section class="workspace-settings ownership-form"><label><span>Email chủ sở hữu mới · dùng chung</span><div class="owner-email-control"><input data-owner-field="email" type="email" required value="${esc(o.email)}" ${!o.editingEmail ? "readonly" : ""} ${o.busy ? "disabled" : ""}><button type="button" class="copy-sheet-action" data-do="${o.editingEmail ? "lock-owner-email" : "edit-owner-email"}" ${o.busy ? "disabled" : ""}>${o.editingEmail ? "Lưu" : "Edit"}</button></div></label></section>${[["sheet","sheetUrl","Google Sheet"],["folder","driveUrl","Folder Drive chứa asset"]].map(([kind,key,title]) => `<section class="workspace-settings ownership-form"><h2>${title}</h2><label><span>Đường dẫn ${title}</span><input data-owner-field="${key}" value="${esc(o[key])}" ${o.busy ? "disabled" : ""}></label><div class="module-actions"><button class="primary-action" data-do="transfer-owner" data-kind="${kind}" ${o.busy || o.editingEmail || !o.email || !o[key] || !state.google.signedIn ? "disabled" : ""}>${o.busy && o.activeKind === kind ? "Đang chuyển…" : `Chuyển owner ${kind === "sheet" ? "sheet" : "folder"}`}</button>${o.busy && o.activeKind === kind ? `<button class="danger-action" data-do="cancel-transfer-owner" ${o.cancelling ? "disabled" : ""}>${o.cancelling ? "Đang dừng…" : "Cancel"}</button>` : ""}</div>${o.activeKind === kind ? `${o.busy ? `<div class="notice">${o.cancelling ? "Đang dừng sau mục hiện tại. Các mục đã chuyển vẫn giữ nguyên." : "Đang chuyển quyền. Có thể Cancel để dừng trước mục tiếp theo."}</div>` : ""}${o.message ? `<div class="notice ok">${esc(o.message)}</div>` : ""}${o.error ? `<div class="notice error">${esc(o.error)}</div>` : ""}${o.results.some((item) => item.ok && item.isFolder) ? `<div class="owner-transferred-folders"><h3>Folder đã chuyển thành công</h3><ul>${o.results.filter((item) => item.ok && item.isFolder).map((item) => `<li>${esc(item.displayPath || item.name)}</li>`).join("")}</ul></div>` : ""}` : ""}</section>`).join("")}<section class="workspace-settings ownership-form owner-move-section"><h2>Di chuyển Sheet vào folder</h2><p>Chọn Sheet và folder đích để di chuyển. Thao tác này không đổi owner.</p><label><span>Đường dẫn Google Sheet</span><input data-owner-field="moveSheetUrl" value="${esc(o.moveSheetUrl)}" ${o.busy ? "disabled" : ""}></label><label><span>Folder Drive đích</span><div class="owner-folder-picker"><input data-owner-field="moveFolderUrl" value="${esc(o.moveFolderUrl)}" ${o.busy ? "disabled" : ""}><button class="copy-sheet-action" data-do="pick-owner-drive-folder" ${o.busy ? "disabled" : ""}>Browse Drive</button></div></label><div class="module-actions"><button class="primary-action" data-do="move-sheet-folder" ${o.busy || !o.moveSheetUrl || !o.moveFolderUrl || !state.google.signedIn ? "disabled" : ""}>${o.busy && o.activeKind === "move" ? "Đang di chuyển…" : "Di chuyển sheet"}</button></div>${o.activeKind === "move" ? `${o.message ? `<div class="notice ok">${esc(o.message)}</div>` : ""}${o.error ? `<div class="notice error">${esc(o.error)}</div>` : ""}` : ""}</section></main>`;
 }
 
 function renderNaming() {
@@ -1265,6 +1304,20 @@ app.addEventListener("click", async (e) => {
       w.message = `Tìm thấy ${result.files.length} GIF · đã map ${matched} hàng.${duplicate.size ? ` Bỏ qua ${duplicate.size} tên trùng.` : ""}`;
     } catch (error) { w.error = error.message; }
     finally { w.busy = false; render(); }
+  } else if (a === "pick-owner-drive-folder") {
+    if (state.ownership.busy) return;
+    const folderUrl = await chooseDriveFolder();
+    if (folderUrl) { state.ownership.moveFolderUrl = folderUrl; render(); }
+  } else if (a === "move-sheet-folder") {
+    const o = state.ownership;
+    if (o.busy || !state.google.signedIn) return;
+    o.busy = true; o.activeKind = "move"; o.message = ""; o.error = ""; render();
+    try {
+      const result = await window.spinePreview.moveSheetToFolder({ sheetUrl:o.moveSheetUrl, folderUrl:o.moveFolderUrl });
+      if (!result?.ok) throw new Error(result?.error || "Không thể di chuyển Sheet. Kiểm tra quyền trên Sheet và folder đích.");
+      o.message = `Đã di chuyển ${result.name} vào folder ${result.folderName}.`;
+    } catch (error) { o.error = error.message; }
+    finally { o.busy = false; render(); }
   } else if (a === "edit-owner-email") {
     if (state.ownership.busy) return;
     state.ownership.editingEmail = true; render();

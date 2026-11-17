@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('spinePreview', {
     return () => ipcRenderer.removeListener('animation-notes-progress', listener);
   },
   scanUploadGifs: (folder) => ipcRenderer.invoke('scan-upload-gifs', folder),
+  browseDriveFolders: (payload) => ipcRenderer.invoke('workspace-browse-folders', payload),
+  moveSheetToFolder: (payload) => ipcRenderer.invoke('workspace-move-sheet', payload),
   transferOwnership: (payload) => ipcRenderer.invoke('workspace-transfer-owner', payload),
   cancelTransferOwnership: () => ipcRenderer.invoke('workspace-cancel-transfer-owner'),
   assetBaseUrl: () => ipcRenderer.invoke('asset-base-url'),

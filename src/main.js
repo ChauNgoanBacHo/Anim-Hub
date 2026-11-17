@@ -196,7 +196,7 @@ function scanLocalCatalog(rootPath, options = {}) {
             } catch { return []; }
           });
           if (!spines.length) return [];
-          const description = spines.map((spine) => `File:${spine.name} có ${spine.animations.length} anim:\n${spine.animations.map((name) => `- ${name}`).join("\n")}\nSố skin: ${spine.skinCount}`).join("\n\n");
+          const description = spines.map((spine) => `File ${spine.name} có ${spine.animations.length} anim:\n${spine.animations.map((name) => `- ${name}`).join("\n")}\nSố skin: ${spine.skinCount}`).join("\n\n");
           return [{ name: entry.name, kind:"spine", group:entry.name, localPath:folder, pngPaths, spines, description }];
         });
       tabs.push({ title: stripProjectPrefix(category.name), source: "animation", sourceName: category.name, items });

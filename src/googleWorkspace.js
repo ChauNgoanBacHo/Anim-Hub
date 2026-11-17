@@ -237,6 +237,78 @@ async function cancelCatalogOperation(id) {
   }
   return {};
 }
+async function createSourceTab(spreadsheetId, folderUrl, token) {
+  const folderId = idFrom(folderUrl, "folder");
+  const sourceUrl = folderId ? `https://drive.google.com/drive/folders/${folderId}` : String(folderUrl).trim();
+  if (!/^https?:\/\//i.test(sourceUrl)) throw new Error("Link source không hợp lệ.");
+  const headers = { Authorization:`Bearer ${token}`, "Content-Type":"application/json" };
+  const links = {PSD:[], SPINE:[]};
+  const sourceFolders = {};
+  async function children(id) {
+    const files = []; let pageToken = "";
+    do {
+      const params = new URLSearchParams({q:`'${id}' in parents and trashed=false`,fields:"nextPageToken,files(id,name,mimeType,webViewLink)",pageSize:"1000",orderBy:"name_natural",supportsAllDrives:"true",includeItemsFromAllDrives:"true"});
+      if (pageToken) params.set("pageToken",pageToken);
+      const page = await json(`https://www.googleapis.com/drive/v3/files?${params}`, {headers});
+      files.push(...(page.files || [])); pageToken = page.nextPageToken || "";
+      if (files.length > 1000) throw new Error("Folder source quá nhiều file, hãy chọn folder nhỏ hơn.");
+    } while (pageToken);
+    return files;
+  }
+  if (folderId) {
+    const folder = await json(`https://www.googleapis.com/drive/v3/files/${folderId}?fields=id,name,mimeType&supportsAllDrives=true`, {headers});
+    const entries = await children(folderId);
+    for (const type of ["PSD","SPINE"]) {
+      const match = new RegExp(`(?:^|[-_ ])${type}$`, "i");
+      const isFolder = (file) => file.mimeType === "application/vnd.google-apps.folder";
+      if (match.test(folder.name)) { sourceFolders[type] = folder; links[type].push(...entries.filter((file) => !isFolder(file))); }
+      else {
+        for (const child of entries.filter((file) => isFolder(file) && match.test(file.name))) {
+          sourceFolders[type] ||= child;
+          links[type].push(...(await children(child.id)).filter((file) => !isFolder(file)));
+        }
+        links[type].push(...entries.filter((file) => !isFolder(file) && new RegExp(`(?:^|[-_ ])${type}(?:\\.[^.]+)?$`, "i").test(file.name)));
+      }
+      links[type] = [...new Map(links[type].map((file) => [file.id,file])).values()];
+    }
+  }
+  const psdCount = Math.max(7,links.PSD.length), spineCount = Math.max(3,links.SPINE.length);
+  const spineHeader = 2 + psdCount, rowCount = spineHeader + 1 + spineCount;
+  const base = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
+  let metadata = await json(`${base}?fields=sheets.properties`, {headers});
+  let sheetId = metadata.sheets?.find((s) => s.properties.title === "SOURCE")?.properties.sheetId;
+  if (sheetId == null) {
+    const added = await json(`${base}:batchUpdate`, {method:"POST",headers,body:JSON.stringify({requests:[{addSheet:{properties:{title:"SOURCE",index:0}}}]})});
+    sheetId = added.replies[0].addSheet.properties.sheetId;
+  }
+  const grid = {sheetId,startRowIndex:0,endRowIndex:rowCount,startColumnIndex:0,endColumnIndex:4};
+  await json(`${base}:batchUpdate`, {method:"POST",headers,body:JSON.stringify({requests:[{unmergeCells:{range:{sheetId,startColumnIndex:0,endColumnIndex:4}}}]})});
+  await json(`${base}/values/${encodeURIComponent("'SOURCE'!A:D")}:clear`, {method:"POST",headers,body:"{}"});
+  const values = [["No","Description","Status","Note / Link"],["PSD","","",""]];
+  for (let i=0;i<psdCount;i++) values.push([i+1,links.PSD[i]?.name || "","",i === 0 ? sourceFolders.PSD?.name || "" : ""]);
+  values.push(["SPINE","","",""]);
+  for (let i=0;i<spineCount;i++) values.push([i+1,links.SPINE[i]?.name || "","",i === 0 ? sourceFolders.SPINE?.name || "" : ""]);
+  await json(`${base}/values/${encodeURIComponent("'SOURCE'!A1")}?valueInputOption=RAW`, {method:"PUT",headers,body:JSON.stringify({values})});
+  const range = (r1,r2,c1=0,c2=4) => ({sheetId,startRowIndex:r1,endRowIndex:r2,startColumnIndex:c1,endColumnIndex:c2});
+  const requests = [
+    {updateSheetProperties:{properties:{sheetId,index:0,gridProperties:{frozenRowCount:1}},fields:"index,gridProperties.frozenRowCount"}},
+    {repeatCell:{range:grid,cell:{userEnteredFormat:{verticalAlignment:"MIDDLE",wrapStrategy:"WRAP",backgroundColor:{red:1,green:1,blue:1},textFormat:{foregroundColor:{red:0,green:0,blue:0},fontSize:12}}},fields:"userEnteredFormat"}},
+    {repeatCell:{range:range(0,1),cell:{userEnteredFormat:{backgroundColor:{red:.07,green:.32,blue:.56},horizontalAlignment:"CENTER",textFormat:{bold:true,foregroundColor:{red:1,green:1,blue:1}}}},fields:"userEnteredFormat(backgroundColor,horizontalAlignment,textFormat)"}},
+    ...[[1,2],[spineHeader,spineHeader+1]].flatMap(([a,b]) => [{mergeCells:{range:range(a,b),mergeType:"MERGE_ALL"}},{repeatCell:{range:range(a,b),cell:{userEnteredFormat:{horizontalAlignment:"CENTER",textFormat:{bold:true,italic:true,fontSize:22}}},fields:"userEnteredFormat(horizontalAlignment,textFormat)"}}]),
+    ...[[2,spineHeader,"PSD"],[spineHeader+1,rowCount,"SPINE"]].flatMap(([a,b,type]) => [
+      {repeatCell:{range:range(a,b,0,1),cell:{userEnteredFormat:{textFormat:{fontSize:10}}},fields:"userEnteredFormat.textFormat.fontSize"}},
+      {mergeCells:{range:range(a,b,3,4),mergeType:"MERGE_ALL"}},
+      ...(sourceFolders[type] ? [{repeatCell:{range:range(a,b,3,4),cell:{userEnteredFormat:{textFormat:{link:{uri:`https://drive.google.com/drive/folders/${sourceFolders[type].id}`},underline:true,foregroundColor:{red:.1,green:.3,blue:.85}}}},fields:"userEnteredFormat.textFormat"}}] : []),
+      {repeatCell:{range:range(a,b,2,3),cell:{userEnteredFormat:{backgroundColor:{red:.72,green:.87,blue:.81},horizontalAlignment:"CENTER"},dataValidation:{condition:{type:"ONE_OF_LIST",values:[{userEnteredValue:"DONE"}]},showCustomUi:true,strict:true}},fields:"userEnteredFormat(backgroundColor,horizontalAlignment),dataValidation"}},
+      ...links[type].map((file,index) => ({repeatCell:{range:range(a+index,a+index+1,1,2),cell:{userEnteredFormat:{textFormat:{link:{uri:file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`},underline:true,foregroundColor:{red:.1,green:.3,blue:.85}}}},fields:"userEnteredFormat.textFormat"}}))
+    ]),
+    ...[70,420,130,300].map((pixelSize,index) => ({updateDimensionProperties:{range:{sheetId,dimension:"COLUMNS",startIndex:index,endIndex:index+1},properties:{pixelSize},fields:"pixelSize"}})),
+    {updateDimensionProperties:{range:{sheetId,dimension:"ROWS",startIndex:0,endIndex:rowCount},properties:{pixelSize:52},fields:"pixelSize"}},
+    {updateBorders:{range:grid,top:{style:"SOLID"},bottom:{style:"SOLID"},left:{style:"SOLID"},right:{style:"SOLID"},innerHorizontal:{style:"SOLID"},innerVertical:{style:"SOLID"}}}
+  ];
+  await json(`${base}:batchUpdate`, {method:"POST",headers,body:JSON.stringify({requests})});
+}
+
 async function createCatalog(sheetUrl, catalog, operationId) {
   if (operationId) catalogOperations.set(operationId, { cancelled:false });
   checkCatalogOperation(operationId);
@@ -263,6 +335,8 @@ async function createCatalog(sheetUrl, catalog, operationId) {
     }
   }
   if (requests.length) await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ requests }) });
+  checkCatalogOperation(operationId);
+  if (catalog.sourceFolderUrl) await createSourceTab(spreadsheetId, catalog.sourceFolderUrl, token);
   for (const tab of catalog.tabs) {
     checkCatalogOperation(operationId);
     const title = safeSheetTitle(tab.title);
@@ -277,7 +351,7 @@ async function createCatalog(sheetUrl, catalog, operationId) {
       }
       const fileNames = item.fileNames?.join("\n") || item.spineFileName || (!isUi && item.localPath && fs.existsSync(item.localPath)
         ? fs.readdirSync(item.localPath, { withFileTypes: true }).filter((entry) => entry.isFile() && !entry.name.startsWith(".") && !/\.meta$/i.test(entry.name)).map((entry) => entry.name).sort().join("\n") : item.name);
-      return [index + 1, isUi ? "Static" : "Spine", "", item.driveFolderUrl ? item.driveFolderName || item.group || tab.sourceName : "", fileNames, ...(isUi ? [dimensions] : []), "DONE", isUi ? "" : item.description || "", ""];
+      return [index + 1, isUi ? item.type || "Static" : "Spine", "", item.driveFolderUrl ? item.driveFolderName || item.group || tab.sourceName : "", fileNames, ...(isUi ? [dimensions] : []), "DONE", isUi ? "" : item.description || "", ""];
     })];
     while (isUi && values.length < (tab.views || []).length + 1) values.push(Array(columns.length).fill(""));
     await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`${quoted(title)}!A1`)}?valueInputOption=RAW`, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ values }) });
@@ -291,7 +365,7 @@ async function createCatalog(sheetUrl, catalog, operationId) {
     const rowCount = Math.max(2, tab.items.length + 1, (tab.views || []).length + 1);
     const columnCount = tab.source === "ui" ? 9 : 8;
     const statusIndex = tab.source === "ui" ? 6 : 5;
-    const widths = tab.source === "ui" ? [40,70,300,220,270,140,80,300,300] : [40,70,300,220,270,80,300,300];
+    const widths = tab.source === "ui" ? [40,70,300,220,290,140,80,300,300] : [40,70,300,220,290,80,300,300];
     return [
       { repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: rowCount, startColumnIndex: 4, endColumnIndex: 5 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE" } }, fields: "userEnteredFormat(horizontalAlignment,verticalAlignment)" } },
       ...(tab.source === "ui" ? [{ repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: rowCount, startColumnIndex: 5, endColumnIndex: 6 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE" } }, fields: "userEnteredFormat(horizontalAlignment,verticalAlignment)" } }] : []),
@@ -315,7 +389,9 @@ async function createCatalog(sheetUrl, catalog, operationId) {
   if (layoutRequests.length) {
     await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ requests: layoutRequests }) });
   }
-  return { spreadsheetId, tabs: catalog.tabs.length };
+  checkCatalogOperation(operationId);
+
+  return { spreadsheetId, tabs: catalog.tabs.length, sourceCreated: Boolean(catalog.sourceFolderUrl) };
 }
 async function loadSheet(sheetUrl, tabTitle = "") {
   const spreadsheetId = idFrom(sheetUrl, "sheet");
@@ -409,6 +485,7 @@ async function ensureQueueSheet(spreadsheetId, token) {
 }
 
 async function queueImages(payload) {
+  if (payload.operationId && !catalogOperations.has(payload.operationId)) catalogOperations.set(payload.operationId, {cancelled:false});
   checkCatalogOperation(payload.operationId);
   const spreadsheetId = payload.spreadsheetId || idFrom(CLOSURE_SHEET_URL, "sheet");
   if (!spreadsheetId) throw new Error("Closure Sheet ID không hợp lệ.");

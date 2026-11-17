@@ -212,11 +212,28 @@ function scanLocalCatalog(rootPath, options = {}) {
         const groupPath = path.join(categoryPath, group.name);
         items.push(...directoryEntries(groupPath).filter(isCatalogImage).map((entry) => ({ name: entry.name, kind: "image", group: group.name, localPath: path.join(groupPath, entry.name) })));
       }
-      const views = items.filter((item) => /(?:^|[_\- ])view(?:[_\- .]|$)/i.test(item.name));
+      for (const item of items) {
+        const folder = path.dirname(item.localPath);
+        const stem = path.parse(item.name).name.toLowerCase();
+        const fonts = directoryEntries(folder).filter((entry) => entry.isFile() && /\.fnt$/i.test(entry.name));
+        const matchingFonts = fonts.filter((entry) => {
+          if (path.parse(entry.name).name.toLowerCase() === stem) return true;
+          const fontPath = path.join(folder, entry.name);
+          if (fs.statSync(fontPath).size > 2 * 1024 * 1024) return false;
+          const content = fs.readFileSync(fontPath, "utf8");
+          return Array.from(content.matchAll(/\bfile\s*=\s*["']([^"']+)["']/gi))
+            .some((match) => path.basename(match[1]).toLowerCase() === item.name.toLowerCase());
+        });
+        if (matchingFonts.length) {
+          item.type = "Bitmap Font";
+          item.fileNames = [...matchingFonts.map((entry) => entry.name).sort(), item.name];
+        }
+      }
+      const views = items.filter((item) => !item.type && /(?:^|[_\- ])view(?:[_\- .]|$)/i.test(item.name));
       const grouped = [], states = new Map();
       for (const item of items.filter((item) => !views.includes(item))) {
         const match = item.name.match(/^(.*?)[_\- ](normal|pressed|hover|disable|disabled)\.(png|jpe?g|webp)$/i);
-        if (!match) { grouped.push(item); continue; }
+        if (!match || item.type === "Bitmap Font") { grouped.push(item); continue; }
         const key = `${item.group}\n${match[1]}`.toLowerCase();
         if (!states.has(key)) {
           const group = { ...item, name: match[1], previewPaths: [], fileNames: [] };

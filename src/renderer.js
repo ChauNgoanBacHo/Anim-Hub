@@ -19,6 +19,8 @@ const savedGlobalDuration = Number(localStorage.getItem("gif-global-duration"));
 const state = {
   source: localStorage.getItem("gif-source") || "",
   output: localStorage.getItem("gif-output") || "",
+  backgroundMode: ["checker", "transparent", "color"].includes(localStorage.getItem("gif-background-mode")) ? localStorage.getItem("gif-background-mode") : localStorage.getItem("gif-bake-checker") !== "false" ? "checker" : "transparent",
+  backgroundColor: /^#[0-9a-f]{6}$/i.test(localStorage.getItem("gif-background-color") || "") ? localStorage.getItem("gif-background-color") : "#202226",
   bakeChecker: localStorage.getItem("gif-bake-checker") !== "false",
   combineSymbols: localStorage.getItem("gif-combine-symbols") === "true",
   exportMode: ["single", "group", "both"].includes(localStorage.getItem("gif-export-mode")) ? localStorage.getItem("gif-export-mode") : localStorage.getItem("gif-combine-symbols") === "true" ? "group" : "single",
@@ -62,6 +64,7 @@ const state = {
     uiDrive: localStorage.getItem("closure-ui-drive") || "",
     useUi: true,
     uiFolder: localStorage.getItem("closure-ui-folder") || "_UI_EN",
+    sourceFolderUrl: localStorage.getItem("closure-source-folder-url") || "",
     sheetUrl: "",
     catalog: null,
     sheet: null,
@@ -214,8 +217,9 @@ function framePixelsForExport(
   bakeChecker,
   width = SIZE,
   height = SIZE,
+  backgroundColor = null,
 ) {
-  if (!bakeChecker) {
+  if (!bakeChecker && !backgroundColor) {
     return frameCanvas
       .getContext("2d", { willReadFrequently: true })
       .getImageData(0, 0, width, height).data;
@@ -224,6 +228,10 @@ function framePixelsForExport(
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (backgroundColor) {
+    context.fillStyle = backgroundColor;
+    context.fillRect(0, 0, width, height);
+  } else {
   const cell = 24;
   for (let y = 0; y < height; y += cell) {
     for (let x = 0; x < width; x += cell) {
@@ -231,6 +239,7 @@ function framePixelsForExport(
         (x / cell + y / cell) % 2 === 0 ? "#c8ced8" : "#8f99a8";
       context.fillRect(x, y, cell, cell);
     }
+  }
   }
   context.drawImage(frameCanvas, 0, 0);
   return context.getImageData(0, 0, width, height).data;
@@ -339,6 +348,7 @@ async function encodeWithinSize({
   width,
   height,
   bakeChecker,
+  backgroundColor,
   renderFrame,
   onProgress,
 }) {
@@ -370,6 +380,7 @@ async function encodeWithinSize({
           bakeChecker,
           outputWidth,
           outputHeight,
+          backgroundColor,
         ),
       );
       const palette = quantize(pixels, profile.colors, {
@@ -541,10 +552,12 @@ function renderCatalog() {
   const catalog = w.catalog;
   const sheetConfigured = state.google.signedIn && w.sheetUrl;
   const actions = `<div class="module-actions"><button class="danger-action" data-do="clear-catalog" ${!sheetConfigured || w.busy ? "disabled" : ""}>Clear all data</button><button class="copy-sheet-action" data-do="copy-sheet" ${!w.sheetUrl || w.busy ? "disabled" : ""}>Make a copy ↗</button></div>`;
+  const hasSource = w.useUi && Boolean(w.sourceFolderUrl.trim());
+  const sourceCard = hasSource ? `<article><header><div><b>SOURCE</b><span>Source PSD / Spine</span></div><div class="catalog-tab-actions"><strong>10</strong><button data-do="upload-source-tab" ${!sheetConfigured || w.busy ? "disabled" : ""}>Upload</button></div></header><ol><li><span>PSD</span><small>7 dòng</small></li><li><span>SPINE</span><small>3 dòng</small></li></ol></article>` : "";
   const preview = catalog
-    ? `<div class="catalog-summary"><div><strong>${esc(catalog.rootName)}</strong><span>${catalog.tabs.length} tabs · ${catalog.tabs.reduce((sum, tab) => sum + tab.items.length, 0)} items</span></div>${w.busy ? `<progress max="1" value="${w.progress}"></progress>` : ""}</div><div class="catalog-tabs">${catalog.tabs.map((tab, tabIndex) => `<article><header><div><b>${esc(tab.title)}</b><span>${tab.source === "ui" ? "UI images" : "Animation assets"}</span></div><div class="catalog-tab-actions"><strong>${tab.items.length}</strong><button data-do="upload-catalog-tab" data-tab-index="${tabIndex}" ${!sheetConfigured || w.busy ? "disabled" : ""}>Upload</button></div></header><ol>${tab.items.slice(0, 8).map((item) => `<li><span>${esc(item.name)}</span>${item.group ? `<small>${esc(item.group)}</small>` : ""}</li>`).join("")}${tab.items.length > 8 ? `<li class="more">+${tab.items.length - 8} more</li>` : ""}</ol></article>`).join("")}</div>`
+    ? `<div class="catalog-summary"><div><strong>${esc(catalog.rootName)}</strong><span>${catalog.tabs.length + (hasSource ? 1 : 0)} tabs · ${catalog.tabs.reduce((sum, tab) => sum + tab.items.length, 0)} items</span></div>${w.busy ? `<progress max="1" value="${w.progress}"></progress>` : ""}</div><div class="catalog-tabs">${sourceCard}${catalog.tabs.map((tab, tabIndex) => `<article><header><div><b>${esc(tab.title)}</b><span>${tab.source === "ui" ? "UI images" : "Animation assets"}</span></div><div class="catalog-tab-actions"><strong>${tab.items.length}</strong><button data-do="upload-catalog-tab" data-tab-index="${tabIndex}" ${!sheetConfigured || w.busy ? "disabled" : ""}>Upload</button></div></header><ol>${tab.items.slice(0, 8).map((item) => `<li><span>${esc(item.name)}</span>${item.group ? `<small>${esc(item.group)}</small>` : ""}</li>`).join("")}${tab.items.length > 8 ? `<li class="more">+${tab.items.length - 8} more</li>` : ""}</ol></article>`).join("")}</div>`
     : `<div class="module-empty"><b>${w.busy ? "Đang scan nguồn asset" : "Chưa có kết quả Scan"}</b><span>${w.busy ? "Tiến trình đang được cập nhật ở phía trên. Thời gian phụ thuộc số folder và tốc độ Drive." : "Tick Animation hoặc UI, nhập link Drive và chọn folder local tương ứng, rồi bấm Scan."}</span></div>`;
-app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${featureLoginNotice()}${workspaceSettings()}<section class="drive-source catalog-sources">${[["useAnimation","animationPath","animationDrive","Animation"],["useUi","uiPath","uiDrive","UI"]].map(([toggle,key,drive,label]) => `<section class="catalog-source"><label class="catalog-source-toggle"><input type="checkbox" data-catalog-toggle="${toggle}" ${w[toggle] ? "checked" : ""} ${w.busy ? "disabled" : ""}> ${label}</label><div class="catalog-source-option"><label><span class="source-label">Link Drive · lấy link folder cho sheet <button type="button" class="source-info" aria-label="Thông tin nguồn Drive">i<span class="source-info-tooltip" role="tooltip">Drive chỉ dùng để tìm link folder tương ứng và ghi vào cột Folder trên Sheet. App không tải JSON hay ảnh từ Drive.</span></button></span><input data-workspace="${drive}" value="${esc(w[drive])}" ${!w[toggle] || w.busy ? "disabled" : ""}></label></div><div class="catalog-source-option"><label><span class="source-label">Local · nguồn thông tin và upload ảnh lên sheet <button type="button" class="source-info" aria-label="Thông tin nguồn Local">i<span class="source-info-tooltip" role="tooltip">App scan thông tin asset từ local và điều chỉnh size, quality ảnh thành thumbnail để upload lên Sheet. Tên folder local cần khớp với Drive.</span></button></span></label><div class="catalog-source-path"><input data-workspace="${key}" value="${esc(w[key])}" ${!w[toggle] || w.busy ? "disabled" : ""}><button data-do="pick-catalog-source" data-source="${key}" ${!w[toggle] || w.busy ? "disabled" : ""}>Browse</button></div></div></section>`).join("")}<div class="module-actions catalog-scan-actions"><button data-do="scan-local" ${w.busy || !(w.useAnimation || w.useUi) || (w.useAnimation && (!w.animationPath || !w.animationDrive)) || (w.useUi && (!w.uiPath || !w.uiDrive)) ? "disabled" : ""}>${w.busy ? "Scanning…" : "Scan"}</button><button class="primary-action" data-do="create-catalog" ${!catalog || !sheetConfigured || w.busy ? "disabled" : ""}>Create / Update Sheet</button>${w.catalogOperation ? `<button class="copy-sheet-action" data-do="cancel-catalog" ${w.catalogCancelled ? "disabled" : ""}>${w.catalogCancelled ? "Đang huỷ…" : "Cancel"}</button>` : ""}</div></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
+app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Tạo Sheet</h1><p>Đọc cấu trúc Animation/UI_EN trên máy và tạo tab closure tự động.</p></div>${actions}</header>${featureLoginNotice()}${workspaceSettings()}<section class="drive-source catalog-sources">${[["useAnimation","animationPath","animationDrive","Animation"],["useUi","uiPath","uiDrive","UI"]].map(([toggle,key,drive,label]) => `<section class="catalog-source"><label class="catalog-source-toggle"><input type="checkbox" data-catalog-toggle="${toggle}" ${w[toggle] ? "checked" : ""} ${w.busy ? "disabled" : ""}> ${label}</label><div class="catalog-source-option"><label><span class="source-label">Link Drive · lấy link folder cho sheet <button type="button" class="source-info" aria-label="Thông tin nguồn Drive">i<span class="source-info-tooltip" role="tooltip">Drive chỉ dùng để tìm link folder tương ứng và ghi vào cột Folder trên Sheet. App không tải JSON hay ảnh từ Drive.</span></button></span><input data-workspace="${drive}" value="${esc(w[drive])}" ${!w[toggle] || w.busy ? "disabled" : ""}></label></div><div class="catalog-source-option"><label><span class="source-label">Local · nguồn thông tin và upload ảnh lên sheet <button type="button" class="source-info" aria-label="Thông tin nguồn Local">i<span class="source-info-tooltip" role="tooltip">App scan thông tin asset từ local và điều chỉnh size, quality ảnh thành thumbnail để upload lên Sheet. Tên folder local cần khớp với Drive.</span></button></span></label><div class="catalog-source-path"><input data-workspace="${key}" value="${esc(w[key])}" ${!w[toggle] || w.busy ? "disabled" : ""}><button data-do="pick-catalog-source" data-source="${key}" ${!w[toggle] || w.busy ? "disabled" : ""}>Browse</button></div></div>${toggle === "useUi" ? `<div class="catalog-source-option"><label><span>Link folder source · không bắt buộc</span><input data-workspace="sourceFolderUrl" value="${esc(w.sourceFolderUrl)}" placeholder="Link folder Drive chứa source PSD / Spine" ${!w[toggle] || w.busy ? "disabled" : ""}></label></div>` : ""}</section>`).join("")}<div class="module-actions catalog-scan-actions"><button data-do="scan-local" ${w.busy || !(w.useAnimation || w.useUi) || (w.useAnimation && (!w.animationPath || !w.animationDrive)) || (w.useUi && (!w.uiPath || !w.uiDrive)) ? "disabled" : ""}>${w.busy && !w.catalogOperation ? "Scanning…" : "Scan"}</button><button class="primary-action" data-do="create-catalog" ${!catalog || !sheetConfigured || w.busy ? "disabled" : ""}>Create / Update Sheet</button>${w.catalogOperation ? `<button class="copy-sheet-action" data-do="cancel-catalog" ${w.catalogCancelled ? "disabled" : ""}>${w.catalogCancelled ? "Đang huỷ…" : "Cancel"}</button>` : ""}</div></section>${pageNotice()}<section class="catalog-preview">${preview}</section></main>`;
 }
 
 function renderUpload() {
@@ -555,7 +568,7 @@ function renderUpload() {
   const rows = w.uploadRows.length
     ? `<div class="upload-head"><span>#</span><span>Animation item</span><span>GIF file</span></div>${w.uploadRows.map((row, index) => `<div class="upload-row ${row.status || ""}" data-upload-index="${index}"><span>${esc(row.index)}</span><div><b>${esc(row.name)}</b><small>${esc(row.sheetName || sheet.selected)} · Row ${row.rowNumber} · Demo ${esc(row.demoCell || `C${row.rowNumber}`)}</small></div><button class="file-drop ${row.file ? "has-file" : ""}" data-do="pick-upload-file"><input type="file" accept="image/gif" data-upload-file="${index}"><strong>${row.file ? esc(row.file.name) : "Drop GIF or choose file"}</strong><span>${row.status === "done" ? "Uploaded" : row.status === "uploading" ? "Queued / uploading…" : row.status === "failed" ? "Failed" : row.file ? `✓ Đã chọn GIF · ${Math.round(row.file.size / 1024)} KB · Bấm để đổi` : "GIF only"}</span></button>${row.file ? `<button class="remove-upload-gif" data-do="remove-upload-gif" data-index="${index}" title="Bỏ GIF đã chọn" aria-label="Bỏ GIF đã chọn" ${w.busy ? "disabled" : ""}>×</button>` : ""}</div>`).join("")}`
     : `<div class="module-empty"><b>Chưa có animation rows</b><span>Closure Sheet được cấu hình sẵn trong bản build; bấm Load Sheet để bắt đầu.</span></div>`;
-  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Upload GIF</h1><p>Load animation rows, gắn GIF và upload qua queue tự động.</p></div><div class="module-actions"><button class="primary-action" data-do="upload-all" ${canUpload ? "" : "disabled"}>Upload ${selectedCount || ""} GIF</button></div></header>${featureLoginNotice()}${workspaceSettings()}<section class="upload-controls"><button data-do="load-sheet" ${!state.google.signedIn || !w.sheetUrl || w.busy ? "disabled" : ""}>${w.busy ? "Loading…" : "Load Sheet"}</button></section>${sheet ? `<section class="upload-folder-controls"><label class="batch-gif-picker"><span>Folder GIF · dùng chung GIF output</span><div class="upload-output-path"><input readonly value="${esc(state.output)}" placeholder="Chọn GIF output trong trang Tạo GIF"><button data-do="output" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-upload-output" ${!state.output || w.busy ? "disabled" : ""}>Scan</button></div></label></section>` : ""}${pageNotice()}${w.busy ? `<div class="upload-progress"><span style="width:${Math.max(0.02, w.progress) * 100}%"></span></div>` : ""}<section class="upload-list">${rows}</section></main>`;
+  app.innerHTML = `${appNav()}<main class="module-page"><header class="module-header"><div><h1>Upload GIF</h1><p>Load animation rows, gắn GIF và upload qua queue tự động.</p></div><div class="module-actions"><button class="primary-action" data-do="upload-all" ${canUpload ? "" : "disabled"}>Upload ${selectedCount || ""} GIF</button>${w.uploadingGifs ? `<button class="copy-sheet-action" data-do="cancel-catalog" ${w.catalogCancelled ? "disabled" : ""}>${w.catalogCancelled ? "Đang huỷ…" : "Cancel"}</button>` : ""}</div></header>${featureLoginNotice()}${workspaceSettings()}<section class="upload-controls"><button data-do="load-sheet" ${!state.google.signedIn || !w.sheetUrl || w.busy ? "disabled" : ""}>${w.busy ? "Loading…" : "Load Sheet"}</button></section>${sheet ? `<section class="upload-folder-controls"><label class="batch-gif-picker"><span>Folder GIF · dùng chung GIF output</span><div class="upload-output-path"><input readonly value="${esc(state.output)}" placeholder="Chọn GIF output trong trang Tạo GIF"><button data-do="output" ${w.busy ? "disabled" : ""}>Browse</button><button data-do="scan-upload-output" ${!state.output || w.busy ? "disabled" : ""}>Scan</button></div></label></section>` : ""}${pageNotice()}${w.busy ? `<div class="upload-progress"><span style="width:${Math.max(0.02, w.progress) * 100}%"></span></div>` : ""}<section class="upload-list">${rows}</section></main>`;
 }
 
 app.addEventListener("input", (event) => {
@@ -679,7 +692,7 @@ function renderExporter() {
   <section class="batch-tools"><label><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input data-search value="${esc(state.search)}" placeholder="Search Spine hoặc animation..."></label><button class="clear-search ${state.search ? "" : "hidden"}" data-do="clear-search">Clear</button><span></span><button class="check-first" data-do="check-first" ${state.files.length ? "" : "disabled"}>Check All <b>${state.files.filter((file) => file.animations.length).length}</b></button><button class="uncheck-all" data-do="uncheck-all" ${count ? "" : "disabled"}>Uncheck all <b>${count || ""}</b></button></section>
 <section class="gif-group-list">${state.gifGroups.map((group,index) => `<div><strong>${esc(group.name)}.gif</strong><span>${group.members.length} anim</span><button class="edit-gif-group" data-do="edit-gif-group" data-index="${index}" ${state.exporting ? "disabled" : ""}>Sửa tên</button><button title="Xoá nhóm, đưa item về Single" aria-label="Xoá nhóm" data-do="remove-gif-group" data-index="${index}" ${state.exporting ? "disabled" : ""}>×</button></div>`).join("")}</section>
   <section class="workspace"><div class="headrow"><span>Spine asset</span><span>Animations · chọn skin và animation để export</span></div><div class="groups">${visible.length ? visible.map(groupView).join("") : emptyView(Boolean(state.search))}</div></section>
-  <footer><div class="progress"><div><span>${state.exporting ? esc(state.status) : `${count} animation ready`}</span><strong>${state.exporting ? `${Math.round(state.progress * 100)}%` : (state.exportMode !== "single") ? "GROUP · AUTO OPTIMIZE" : "AUTO CROP · MAX 0.5 MB"}</strong></div><aside><em style="width:${state.exporting ? state.progress * 100 : 0}%"></em></aside></div><label class="export-option"><span>All duration</span><select data-role="global-duration">${GLOBAL_DURATIONS.map((value) => `<option value="${value}" ${state.globalDuration === value ? "selected" : ""}>${value}s</option>`).join("")}</select></label><label class="export-option"><span>Object size</span><select data-role="object-size">${OBJECT_SIZES.map((value) => `<option value="${value}" ${state.objectSize === value ? "selected" : ""}>${value}%</option>`).join("")}</select></label><label class="export-option"><span>Padding</span><select data-role="crop-padding"><option value="4" ${state.cropPadding === 4 ? "selected" : ""}>4 px</option><option value="8" ${state.cropPadding === 8 ? "selected" : ""}>8 px</option><option value="16" ${state.cropPadding === 16 ? "selected" : ""}>16 px</option><option value="24" ${state.cropPadding === 24 ? "selected" : ""}>24 px</option></select></label>${state.gifGroups.length ? `<label class="export-option"><span>Object / row</span><select data-role="group-per-row">${[2, 3, 4, 5, 6].map((value) => `<option value="${value}" ${state.groupPerRow === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>` : ""}<label class="checker-export"><input type="checkbox" data-role="optimize-gif" ${state.optimizeGif ? "checked" : ""}><span>Optimize GIF</span></label><label class="checker-export"><input type="checkbox" data-role="bake-checker" ${state.bakeChecker ? "checked" : ""}><span>Nền caro</span></label><button class="export" data-do="export" ${!count || state.exporting ? "disabled" : ""}>${icon("export")} ${state.exporting ? "Exporting…" : `Export GIF`}</button></footer>
+  <footer><div class="progress"><div><span>${state.exporting ? esc(state.status) : `${count} animation ready`}</span><strong>${state.exporting ? `${Math.round(state.progress * 100)}%` : (state.exportMode !== "single") ? "GROUP · AUTO OPTIMIZE" : "AUTO CROP · MAX 0.5 MB"}</strong></div><aside><em style="width:${state.exporting ? state.progress * 100 : 0}%"></em></aside></div><label class="export-option"><span>All duration</span><select data-role="global-duration">${GLOBAL_DURATIONS.map((value) => `<option value="${value}" ${state.globalDuration === value ? "selected" : ""}>${value}s</option>`).join("")}</select></label><label class="export-option"><span>Object size</span><select data-role="object-size">${OBJECT_SIZES.map((value) => `<option value="${value}" ${state.objectSize === value ? "selected" : ""}>${value}%</option>`).join("")}</select></label><label class="export-option"><span>Padding</span><select data-role="crop-padding"><option value="4" ${state.cropPadding === 4 ? "selected" : ""}>4 px</option><option value="8" ${state.cropPadding === 8 ? "selected" : ""}>8 px</option><option value="16" ${state.cropPadding === 16 ? "selected" : ""}>16 px</option><option value="24" ${state.cropPadding === 24 ? "selected" : ""}>24 px</option></select></label>${state.gifGroups.length ? `<label class="export-option"><span>Object / row</span><select data-role="group-per-row">${[2, 3, 4, 5, 6].map((value) => `<option value="${value}" ${state.groupPerRow === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>` : ""}<div class="export-option gif-opt-option"><span>Opt</span><label class="checker-export"><input type="checkbox" data-role="optimize-gif" ${state.optimizeGif ? "checked" : ""}><span>Optimize</span></label></div><label class="export-option"><span>Background</span><select data-role="gif-background-mode" ${state.exporting ? "disabled" : ""}>${[["checker","Nền caro"],["transparent","Trong suốt"],["color","Màu nền"]].map(([value,label]) => `<option value="${value}" ${state.backgroundMode === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>${state.backgroundMode === "color" ? `<label class="export-option gif-color-option"><span>Màu nền</span><input type="color" data-role="gif-background-color" value="${state.backgroundColor}" aria-label="Chọn màu nền GIF" ${state.exporting ? "disabled" : ""}></label>` : ""}<button class="export" data-do="export" ${!count || state.exporting ? "disabled" : ""}>${icon("export")} ${state.exporting ? "Exporting…" : `Export GIF`}</button></footer>
   <aside class="preview ${state.active ? "open" : ""}"><div class="preview-title"><div><strong data-preview-name>Preview</strong><span>Loop theo đúng timeframe và skin đã chọn</span></div><div class="preview-actions"><button data-do="toggle-preview" title="Play/Pause">${state.previewPaused ? "▶" : "Ⅱ"}</button><button data-do="close" title="Đóng preview">×</button></div></div><div data-canvas class="canvas"></div>${previewTrimView()}</aside></main>`;
   mountStage();
 }
@@ -772,7 +785,14 @@ function startPreviewLoop(item, startTime = item.config.start) {
   };
   state.previewFrame = requestAnimationFrame(tick);
 }
+function syncPreviewBackground() {
+  const box = app.querySelector("[data-canvas]");
+  if (!box) return;
+  box.style.backgroundImage = state.backgroundMode === "checker" ? "" : "none";
+  box.style.backgroundColor = state.backgroundMode === "color" ? state.backgroundColor : state.backgroundMode === "transparent" ? "#111316" : "";
+}
 function mountStage() {
+  syncPreviewBackground();
   if (state.stage && state.active) {
     const box = document.querySelector("[data-canvas]");
     if (box) {
@@ -935,13 +955,14 @@ async function encode(x, n, total) {
         : bounds;
     }
     const crop = expandCrop(pixelBounds, state.cropPadding, SIZE, SIZE);
-    const bakeChecker = state.bakeChecker || x.file.usesAdditiveBlend;
+    const bakeChecker = state.backgroundMode === "checker" || x.file.usesAdditiveBlend;
     const duration = Math.max(0.05, x.config.end - x.config.start);
     const encoded = await encodeWithinSize({
       duration,
       width: crop.width,
       height: crop.height,
       bakeChecker,
+      backgroundColor: state.backgroundMode === "color" ? state.backgroundColor : null,
       renderFrame: async (elapsed) => {
         SpineStage.seek(spine, x.config.start + elapsed);
         stage.renderOnce();
@@ -1040,12 +1061,13 @@ async function encodeCombined(list) {
     }
     const crop = expandCrop(pixelBounds, state.cropPadding, width, height);
     const bakeChecker =
-      state.bakeChecker || list.some((item) => item.file.usesAdditiveBlend);
+      state.backgroundMode === "checker" || list.some((item) => item.file.usesAdditiveBlend);
     const encoded = await encodeWithinSize({
       duration,
       width: crop.width,
       height: crop.height,
       bakeChecker,
+      backgroundColor: state.backgroundMode === "color" ? state.backgroundColor : null,
       renderFrame: async (elapsed) => {
         loaded.forEach(({ item, spine }) => {
           const length = Math.max(0.01, item.config.end - item.config.start);
@@ -1240,9 +1262,9 @@ app.addEventListener("click", async (e) => {
         const result = await window.spinePreview.animationNotes("save-spine", { gameId: n.gameId, fileId: first.fileId, rows });
         if (!result?.ok) throw new Error(result?.error === "Notes action không hợp lệ." ? "Phần lưu đang chạy phiên app cũ. Đóng app và chạy lại npm start để cập nhật." : result?.error || "Không lưu được ghi chú.");
         rows.forEach((edited) => { const target = n.rows.find((row) => row.fileId === edited.fileId && row.animation === edited.animation); if (target) Object.assign(target, edited); });
-        n.message = ""; dialog.close(); render();
+        n.message = ""; dialog.close();
       } catch (error) { dialog.querySelector(".note-dialog-error").textContent = error.message; }
-      finally { n.saving = false; dialog.querySelectorAll("button").forEach((button) => { button.disabled = false; }); }
+      finally { n.saving = false; dialog.querySelectorAll("button").forEach((button) => { button.disabled = false; }); render(); }
     };
     document.body.append(dialog); dialog.showModal();
   } else if (a === "edit-note") {
@@ -1265,9 +1287,9 @@ app.addEventListener("click", async (e) => {
         if (!result?.ok) throw new Error(result?.error || "Không lưu được ghi chú.");
         if (general) n.rows.filter((item) => item.fileId === row.fileId).forEach((item) => { item.general = text; });
         else row.note = text;
-        n.dirty = false; n.message = ""; dialog.close(); render();
+        n.dirty = false; n.message = ""; dialog.close();
       } catch (error) { dialog.querySelector(".note-dialog-error").textContent = error.message; }
-      finally { n.saving = false; dialog.querySelectorAll("button").forEach((button) => { button.disabled = false; }); }
+      finally { n.saving = false; dialog.querySelectorAll("button").forEach((button) => { button.disabled = false; }); render(); }
     };
   } else if (a?.startsWith("notes-")) {
     const n = state.notes;
@@ -1449,15 +1471,17 @@ app.addEventListener("click", async (e) => {
     w.catalogCancelled = true; render();
     const cancelled = await window.spinePreview.cancelCatalog(w.catalogOperation);
     if (!cancelled?.ok) { w.catalogCancelled = false; w.error = cancelled?.error || "Không thể huỷ. Hãy thử lại."; render(); }
-  } else if (a === "create-catalog" || a === "upload-catalog-tab") {
+  } else if (a === "create-catalog" || a === "upload-catalog-tab" || a === "upload-source-tab") {
     const w = state.workspace;
     if (w.busy || !w.catalog || !state.google.signedIn) return;
+    const sourceOnly = a === "upload-source-tab";
+    if (sourceOnly && (!w.useUi || !w.sourceFolderUrl.trim())) return;
     const tab = a === "upload-catalog-tab" ? w.catalog.tabs[Number(b.dataset.tabIndex)] : null;
     if (a === "upload-catalog-tab" && !tab) return;
-    const uploadCatalog = tab ? { ...w.catalog, tabs: [tab] } : w.catalog;
+    const uploadCatalog = { ...w.catalog, tabs: sourceOnly ? [] : tab ? [tab] : w.catalog.tabs, sourceFolderUrl: w.useUi && (sourceOnly || !tab) ? w.sourceFolderUrl.trim() : "" };
     const uploadStartedAt = Date.now();
     w.catalogOperation = crypto.randomUUID(); w.catalogCancelled = false;
-    const uploadTabLabel = uploadCatalog.tabs.map((item) => item.title).join(", ");
+    const uploadTabLabel = [...(uploadCatalog.sourceFolderUrl ? ["SOURCE"] : []), ...uploadCatalog.tabs.map((item) => item.title)].join(", ");
     w.busy = true; w.progress = 0; w.error = ""; w.message = `Đang cập nhật tab: ${uploadTabLabel}…`;
     render();
     const result = await window.spinePreview.createCatalog(w.sheetUrl, uploadCatalog, w.catalogOperation);
@@ -1490,7 +1514,7 @@ app.addEventListener("click", async (e) => {
           const completed = await waitForUploadQueue(queued.jobId, queued.total, result.spreadsheetId, uploadTabLabel);
           if (completed.error) throw new Error(completed.errors.slice(0, 3).join(" · "));
         }
-        w.message = `Đã upload xong tab: ${uploadCatalog.tabs.map((item) => item.title).join(", ")} · ${images.length} ảnh.`;
+        w.message = `Đã upload xong tab: ${uploadTabLabel} · ${images.length} ảnh.`;
       } catch (error) {
         w.error = error.message || String(error);
       }
@@ -1516,18 +1540,22 @@ app.addEventListener("click", async (e) => {
     const w = state.workspace;
     const uploadStartedAt = Date.now();
     const queue = w.uploadRows.filter((row) => row.file);
+    if (w.busy || !queue.length) return;
+    w.catalogOperation = crypto.randomUUID(); w.catalogCancelled = false; w.uploadingGifs = true;
     w.busy = true; w.error = ""; w.message = ""; w.progress = 0; render();
     try {
       w.message = `Preparing ${queue.length} GIF files…`; render();
       const images = [];
       for (let index = 0; index < queue.length; index += 1) {
+        if (w.catalogCancelled) throw new Error("Đã huỷ upload GIF.");
         const row = queue[index];
         row.status = "ready";
         images.push({ sheetName: row.sheetName || w.sheet.selected, cell: row.demoCell || `C${row.rowNumber}`, fileName: row.file.name, mimeType: row.file.type || "image/gif", dataBase64: await fileToBase64(row.file) });
         w.progress = ((index + 1) / queue.length) * 0.1;
         render();
       }
-      const queued = await window.spinePreview.queueImages({ spreadsheetId: w.sheet.spreadsheetId, images });
+      if (w.catalogCancelled) throw new Error("Đã huỷ upload GIF.");
+      const queued = await window.spinePreview.queueImages({ operationId:w.catalogOperation, spreadsheetId: w.sheet.spreadsheetId, images });
       if (!queued?.ok) throw new Error(queued?.error || "Không tạo được GIF upload queue.");
       queue.forEach((row) => { row.status = "uploading"; });
       const completed = await waitForUploadQueue(queued.jobId, queued.total, w.sheet.spreadsheetId);
@@ -1536,8 +1564,15 @@ app.addEventListener("click", async (e) => {
     } catch (error) {
       w.error = error.message || String(error);
     }
+    await window.spinePreview.finishCatalog(w.catalogOperation);
+    w.catalogOperation = null; w.uploadingGifs = false;
     w.busy = false;
     w.progress = 0;
+    if (w.catalogCancelled) {
+      queue.forEach((row) => { if (row.status !== "done") row.status = "ready"; });
+      w.error = ""; w.message = `Đã huỷ upload GIF. Các GIF đã chèn vẫn được giữ lại. Tổng thời gian: ${operationDuration(uploadStartedAt)}.`;
+      render(); return;
+    }
     if (!w.error) w.message = `Completed · ${queue.length} GIF uploaded to ${w.sheet.selected}.`;
     render();
     showUploadResult(!w.error, `${w.error || `Đã upload ${queue.length} GIF lên Sheet.`}\nTổng thời gian xử lý: ${operationDuration(uploadStartedAt)}.`, "upload");
@@ -1601,6 +1636,23 @@ app.addEventListener("click", async (e) => {
 });
 app.addEventListener("input", (e) => {
   const t = e.target;
+  if (t.dataset.role === "gif-background-color") {
+    state.backgroundColor = t.value;
+    localStorage.setItem("gif-background-color", t.value);
+    syncPreviewBackground();
+    return;
+  }
+  if (["moveSheetUrl", "moveFolderUrl"].includes(t.dataset.ownerField)) {
+    const o = state.ownership;
+    o[t.dataset.ownerField] = t.value.trim();
+    if (!o.busy && o.activeKind === "move") {
+      o.error = ""; o.message = "";
+      app.querySelectorAll(".owner-move-section .notice").forEach((notice) => notice.remove());
+    }
+    const button = app.querySelector('[data-do="move-sheet-folder"]');
+    if (button) button.disabled = o.busy || !state.google.signedIn || !o.moveSheetUrl || !o.moveFolderUrl;
+    return;
+  }
   if (t.matches("[data-workspace]")) {
     const key = t.dataset.workspace;
     state.workspace[key] = t.value;
@@ -1696,6 +1748,8 @@ app.addEventListener("change", (e) => {
   }
   if (t.dataset.ownerField) {
     state.ownership[t.dataset.ownerField] = t.value.trim();
+    // Keep the clicked action mounted when a changed URL input loses focus.
+    if (["moveSheetUrl", "moveFolderUrl"].includes(t.dataset.ownerField)) return;
     if (t.dataset.ownerField === "email" && state.ownership.editingEmail) return;
     if (t.dataset.ownerField === "email" && t.validity.valid && t.value.trim()) localStorage.setItem("ownership-recipient-email", t.value.trim());
     render();
@@ -1734,6 +1788,19 @@ app.addEventListener("change", (e) => {
   if (t.matches("[data-upload-file]")) {
     const target = state.workspace.uploadRows[Number(t.dataset.uploadFile)];
     if (target && t.files?.[0]) { target.file = t.files[0]; target.status = "ready"; render(); }
+    return;
+  }
+  if (t.dataset.role === "gif-background-mode") {
+    state.backgroundMode = t.value;
+    state.bakeChecker = t.value === "checker";
+    localStorage.setItem("gif-background-mode", t.value);
+    localStorage.setItem("gif-bake-checker", String(state.bakeChecker));
+    render(); return;
+  }
+  if (t.dataset.role === "gif-background-color") {
+    state.backgroundColor = t.value;
+    localStorage.setItem("gif-background-color", t.value);
+    syncPreviewBackground();
     return;
   }
   if (t.dataset.role === "bake-checker") {

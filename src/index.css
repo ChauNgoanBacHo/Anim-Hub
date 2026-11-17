@@ -1483,3 +1483,10 @@ body[data-module="ownership"] .owner-move-section .owner-folder-picker { display
 body[data-module="ownership"] .owner-move-section .owner-folder-picker input { flex:1; width:0; min-width:0; height:44px; }
 body[data-module="ownership"] .owner-move-section .owner-folder-picker button { height:44px; }
 body[data-module="ownership"] .owner-move-section .module-actions { margin:0; justify-content:flex-start; }
+
+.exporter-page .gif-color-option input[type="color"] { width:64px; height:38px; padding:4px; border:1px solid #454b54; border-radius:8px; background:#0b0c0e; cursor:pointer; }
+
+.exporter-page .gif-opt-option { display:flex; flex-direction:column; gap:6px; }
+.exporter-page .gif-opt-option .checker-export { margin:0; min-height:38px; box-sizing:border-box; }
+
+.exporter-page .gif-opt-option .checker-export span::before { content:none; display:none; }

@@ -87,7 +87,7 @@ test('Windows helper replaces portable directory and restores on immediate launc
    fs.writeFileSync(path.join(target,'launch.cmd'),'@exit /b 0');fs.writeFileSync(path.join(prepared,'launch.cmd'),'@exit /b 0');
    const args=['-NoProfile','-NonInteractive','-File',path.resolve('assets/updater/install-win.ps1'),'-OldPid','2147483647','-Target',target,'-Prepared',prepared,'-Backup',backup,'-Log',path.join(dir,'log'),'-Executable',fail?'missing.exe':'launch.cmd','-Ready',path.join(dir,'ready')];
    const ps=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
-   if(fail) assert.throws(()=>execFileSync(ps,args));else execFileSync(ps,args);
+   if(fail) assert.throws(()=>execFileSync(ps,args,{stdio:'pipe'}));else execFileSync(ps,args,{stdio:'pipe'});
    assert.equal(fs.readFileSync(path.join(target,'version'),'utf8'),fail?'old':'new');
    if(!fail) assert.equal(fs.readFileSync(path.join(backup,'version'),'utf8'),'old');
   }
@@ -95,16 +95,19 @@ test('Windows helper replaces portable directory and restores on immediate launc
 });
 
 test('read staged ASAR package using raw archive parser, including a replaced archive',async()=>{
- const asar = (await import('@electron/asar')).default;
  const {readUpdatePackage} = await import('../src/shared/update-package.mjs');
  const root = fs.mkdtempSync(path.join(os.tmpdir(),'xom asar package '));
  try {
   const input=path.join(root,'input'),archive=path.join(root,'app.asar');fs.mkdirSync(input);
   for(const version of ['1.0.3','1.0.4']) {
    fs.writeFileSync(path.join(input,'package.json'),JSON.stringify({name:'xom-nha-la',version}));
-   await asar.createPackage(input,archive);
+   // ASAR v3's writer can resolve before its output stream closes. Build the
+   // fixture in a child and wait for exit before replacing/removing it on Windows.
+   execFileSync(process.execPath,['--input-type=module','-e',
+     "import asar from '@electron/asar'; await asar.createPackage(process.argv[1],process.argv[2]);",
+     input,archive],{stdio:'pipe'});
    assert.equal(readUpdatePackage(archive).version,version);
   }
   fs.writeFileSync(archive,'invalid');assert.throws(()=>readUpdatePackage(archive));
- } finally {fs.rmSync(root,{recursive:true,force:true});}
+ } finally {fs.rmSync(root,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
 });

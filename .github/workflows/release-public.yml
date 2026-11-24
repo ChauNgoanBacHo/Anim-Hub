@@ -42,8 +42,9 @@ jobs:
           import crypto from 'node:crypto';
           const {version} = JSON.parse(fs.readFileSync('package.json','utf8'));
           if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Stable x.y.z required');
-          const tag = process.env.GITHUB_EVENT_NAME === 'push' ? process.env.GITHUB_REF_NAME : process.env.INPUT_TAG || `v${version}`;
-          if (tag !== `v${version}`) throw new Error('Tag must match package.json version');
+          const input = (process.env.INPUT_TAG || '').trim();
+          const tag = process.env.GITHUB_EVENT_NAME === 'push' ? process.env.GITHUB_REF_NAME : input ? `v${input.replace(/^v/, '')}` : `v${version}`;
+          if (tag !== `v${version}`) throw new Error(`Tag đang chạy là ${tag}, nhưng package.json là ${version}. Tăng version và commit/push trước, hoặc để trống tag khi Run workflow. Tag cần khớp: v${version}`);
           const payload = Buffer.from('xom-update-key-check');
           if (!crypto.verify(null,payload,fs.readFileSync('assets/update-public.pem'),crypto.sign(null,payload,process.env.UPDATE_SIGNING_PRIVATE_KEY))) throw new Error('UPDATE_SIGNING_PRIVATE_KEY does not match public key');
           fs.appendFileSync(process.env.GITHUB_OUTPUT,`tag=${tag}\n`);

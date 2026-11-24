@@ -1,5 +1,5 @@
 import {app,BrowserWindow,ipcMain} from 'electron';
-import fs from 'node:fs';
+import fs from 'original-fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {spawn,execFile} from 'node:child_process';
@@ -144,7 +144,7 @@ async function install() {
     await fs.promises.access(path.dirname(target),fs.constants.W_OK);
     stagedRoot = await fs.promises.mkdtemp(path.join(path.dirname(target),'.xom-update-'));
     await fs.promises.chmod(stagedRoot,0o700);
-    await extractUpdateZip(archivePath,stagedRoot,process.platform);
+    await extractUpdateZip(archivePath,stagedRoot,process.platform,fs);
     const prepared = process.platform === 'darwin' ? path.join(stagedRoot,BUNDLE_NAME) : stagedRoot;
     await validatePrepared(prepared,manifest);
     const backup = `${target}.backup-${app.getVersion()}-${Date.now()}`;

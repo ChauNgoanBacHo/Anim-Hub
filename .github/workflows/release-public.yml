@@ -87,6 +87,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:updater
+      - run: npm run test:updater:electron
       - name: Build app
         shell: bash
         env:

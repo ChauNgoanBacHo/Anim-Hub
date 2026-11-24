@@ -109,3 +109,9 @@ Tên bundle/executable/helper nội bộ dùng ASCII để tránh Archive Utilit
 ## Sửa lỗi Invalid package khi chuẩn bị cài (1.0.4)
 
 Bước kiểm tra package của app staged dùng `src/shared/update-package.mjs` và @electron/asar/original-fs thay cho fs đọc đường dẫn bên trong app.asar. Không tắt integrity fuse của app đang cài. Có regression test đọc archive mới và archive bị thay tại cùng đường dẫn. Client cũ có lỗi này cần cài tay bản sửa một lần; sau đó tiếp tục dùng luồng updater.
+
+## Sửa lỗi Invalid package lúc giải nén (1.0.6)
+
+Lỗi khác với bước đọc metadata 1.0.4: Electron patched fs.open can thiệp khi WriteStream ghi file app.asar. Updater main dùng original-fs; extractUpdateZip nhận filesystem adapter và truyền fs vào WriteStream rõ ràng. Cả giải nén và đọc metadata đều dùng raw filesystem, không tắt integrity fuse.
+
+`npm run test:updater:electron` chạy regression trong Electron thật, giải nén ZIP chứa app.asar rồi đọc package. CI Windows/macOS chạy thêm test này ngoài unit tests Node. Đã tái hiện lỗi cũ và kiểm tra cách mới với ZIP 1.0.5 trong cache trên máy. Bản đang chạy 1.0.4 vẫn chứa lỗi ghi file, nên cần thay thủ công bằng bản sửa 1.0.6 một lần.

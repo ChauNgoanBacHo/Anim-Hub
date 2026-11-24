@@ -1,7 +1,7 @@
 {
   "name": "xom-nha-la",
   "productName": "Xóm Nhà Lá",
-  "version": "1.0.5",
+  "version": "1.0.7",
   "description": "Xóm Nhà Lá — Chuyện gì cũng có tool. Asset catalog, Spine GIF export, closure upload and naming checks.",
   "main": ".vite/build/main.js",
   "private": true,
@@ -15,7 +15,8 @@
     "lint": "echo \"No linting configured\"",
     "update:keygen": "node scripts/create-update-key.mjs",
     "test:updater": "node --test scripts/update-security.test.mjs",
-    "update:sign": "node scripts/sign-update.mjs"
+    "update:sign": "node scripts/sign-update.mjs",
+    "test:updater:electron": "node scripts/test-updater-electron.mjs"
   },
   "keywords": [],
   "author": {

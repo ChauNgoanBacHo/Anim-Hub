@@ -15,7 +15,7 @@ Dữ liệu người dùng/OAuth/settings nằm ở userData được giữ. Kh�
 ## Phạm vi nền tảng
 
 - Windows x64: release ZIP portable đầy đủ, không tải installer để thay app. Helper PowerShell thay thư mục cài và mở executable. Thư mục phải cho user ghi/rename. Ưu tiên bản portable; không nâng quyền, không đổi execution policy. Máy chặn chạy PowerShell script sẽ báo lỗi trước khi app đóng qua handshake helper.
-- macOS arm64/x64: ZIP đúng kiến trúc process; kiểm tra bundle ID/version/executable, kiến trúc Mach-O và package bên trong asar. Cài ở thư mục ghi được, ví dụ `~/Applications`. Chặn `/Volumes` và App Translocation. Không tắt SIP/Gatekeeper hoặc tự xoá quarantine.
+- macOS arm64: ZIP đúng kiến trúc process; kiểm tra bundle ID/version/executable, kiến trúc Mach-O và package bên trong asar. Cài ở thư mục ghi được, ví dụ `~/Applications`. Chặn `/Volumes` và App Translocation. Không tắt SIP/Gatekeeper hoặc tự xoá quarantine.
 - Chính sách máy công ty có thể chặn app/script; updater không vượt qua chính sách đó.
 - Helper rollback nếu thay file hoặc yêu cầu launch thất bại ngay. Chưa có health-check tự rollback khi app mới crash sau launch.
 
@@ -28,8 +28,8 @@ Dữ liệu người dùng/OAuth/settings nằm ở userData được giữ. Kh�
 | Tên hiển thị | Xóm Nhà Lá |
 | Bundle / executable nội bộ | XomNhaLa.app / XomNhaLa (Windows: XomNhaLa.exe) |
 | Windows ZIP | Xom-Nha-La-portable-vX.Y.Z.zip |
-| Mac ZIP | Xom-Nha-La-macOS-arm64-vX.Y.Z.zip / x64 |
-| Signed manifests | update-win32-x64.json, update-darwin-arm64.json, update-darwin-x64.json |
+| Mac ZIP | Xom-Nha-La-macOS-arm64-vX.Y.Z.zip |
+| Signed manifests | update-win32-x64.json, update-darwin-arm64.json |
 | Public key | assets/update-public.pem |
 | Private key mặc định | ~/.config/xom-nha-la/update-private.pem (ngoài repo, mode 600) |
 | Log | userData/update-result.txt |
@@ -68,8 +68,8 @@ npm run test:updater
 
 2. Commit/push source và public key lên main. Không commit private key.
 3. Chạy **Release Public Download** từ main, tag `vX.Y.Z` khớp package version.
-4. Workflow validate key/version, build Windows x64 + macOS arm64/x64, ký manifest chính xác từng ZIP.
-5. Publish job kiểm tra lại cả 3 manifest và ZIP, upload vào draft rồi mới public. Không sửa release đã public; tăng version nếu lỗi.
+4. Workflow validate key/version, build Windows x64 + macOS arm64, ký manifest chính xác từng ZIP.
+5. Publish job kiểm tra lại cả 2 manifest và ZIP, upload vào draft rồi mới public. Không sửa release đã public; tăng version nếu lỗi.
 
 Chỉ app có updater mới nhận update tiếp theo. Release cũ thiếu signed manifest không được cài tự động, app báo bản chưa sẵn sàng. Cần cài tay bản chuyển tiếp một lần.
 
@@ -81,7 +81,7 @@ npm run make:zip -- --arch=arm64
 node scripts/sign-update.mjs path/to/Xom-Nha-La-macOS-arm64-vX.Y.Z.zip darwin arm64
 ```
 
-Không thay đổi ZIP sau khi ký. `scripts/verify-release.mjs <dir>` kiểm tra đủ ba platform artifact trước publish. Workflow mới chỉ công bố khi cả 3 build pass, tránh client thấy release thiếu bản phù hợp.
+Không thay đổi ZIP sau khi ký. `scripts/verify-release.mjs <dir>` kiểm tra đủ hai platform artifact trước publish. Workflow mới chỉ công bố khi cả 2 build pass, tránh client thấy release thiếu bản phù hợp.
 
 ## Source
 

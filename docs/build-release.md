@@ -45,9 +45,9 @@ Hiện source vẫn trigger **push main** và manual workflow_dispatch. Build in
 
 Trigger tag v* hoặc manual từ main. Tag phải khớp package.json và chưa có release public; tag có sẵn phải trỏ đúng commit build. Cần secret `UPDATE_SIGNING_PRIVATE_KEY` khớp public key trong repo.
 
-Workflow prepare kiểm tra version/key → matrix Windows x64 + macOS arm64/x64 → ký từng manifest → upload artifact tạm → publish job verify đủ 3 ZIP và manifest → tạo/reuse draft → upload đủ rồi mới public. Không ghi đè release đã công bố.
+Workflow prepare kiểm tra version/key → matrix Windows x64 + macOS arm64 → ký từng manifest → upload artifact tạm → publish job verify đủ 2 ZIP và manifest → tạo/reuse draft → upload đủ rồi mới public. Không ghi đè release đã công bố.
 
-Release có Windows installer, ZIP portable, hai ZIP macOS và ba signed manifest. Artifact phụ giữ 7 ngày. Link tải: https://github.com/ChauNgoanBacHo/Anim-Hub/releases (repo/release phải public).
+Release có Windows installer, ZIP portable, ZIP macOS arm64 và hai signed manifest. Artifact phụ giữ 7 ngày. Link tải: https://github.com/ChauNgoanBacHo/Anim-Hub/releases (repo/release phải public).
 
 macOS không cấu hình Apple signing/notarization; updater riêng dùng chữ ký Ed25519. Chi tiết cấu hình key, helper và luồng cập nhật tại [Auto-update](auto-update.md).
 

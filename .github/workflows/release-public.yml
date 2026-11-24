@@ -2,12 +2,11 @@ name: Release Public Download
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Optional release tag (example: v1.0.0). Leave blank to use package.json version."
+        description: 'New tag matching package.json (example v1.0.1). Blank uses package version.'
         required: false
         type: string
 
@@ -15,193 +14,161 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-public-${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+  group: release-public
   cancel-in-progress: false
 
 jobs:
-  release-windows:
-    runs-on: windows-latest
+  prepare:
+    runs-on: ubuntu-latest
     outputs:
-      release_tag: ${{ steps.release_tag.outputs.release_tag }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.ref }}
-
-      - name: Resolve release tag
-        id: release_tag
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            RELEASE_TAG="${GITHUB_REF_NAME}"
-          elif [ -n "${{ inputs.tag_name }}" ]; then
-            RELEASE_TAG="${{ inputs.tag_name }}"
-          else
-            PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-            RELEASE_TAG="v${PACKAGE_VERSION}"
-          fi
-
-          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
-          echo "Using release tag: ${RELEASE_TAG}"
-
-      - if: github.event_name == 'workflow_dispatch'
-        name: Create tag if missing
-        shell: bash
-        run: |
-          RELEASE_TAG="${{ steps.release_tag.outputs.release_tag }}"
-
-          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "Tag ${RELEASE_TAG} already exists on origin. Reusing it."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "${RELEASE_TAG}"
-          git push origin "refs/tags/${RELEASE_TAG}"
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-
-      - run: npm ci
-
-      - run: npm run make:win
+      - name: Validate version and release key
+        id: version
         env:
-          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-          GOOGLE_WORKSPACE_DOMAIN: ${{ vars.GOOGLE_WORKSPACE_DOMAIN }}
-          CLOSURE_SHEET_URL: ${{ vars.CLOSURE_SHEET_URL }}
-          ANIMATION_NOTES_SHEET_URL: ${{ vars.ANIMATION_NOTES_SHEET_URL }}
-
-      - name: Create portable zip
-        id: portable_zip
-        shell: pwsh
-        run: |
-          $releaseTag = "${{ steps.release_tag.outputs.release_tag }}"
-          $portableDir = Join-Path $PWD "out/make/portable"
-          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-
-          $packagedAppDir = Get-ChildItem -Path (Join-Path $PWD "out") -Directory |
-            Where-Object { $_.Name -like "*win32*" } |
-            Sort-Object Name |
-            Select-Object -First 1
-
-          if (-not $packagedAppDir) {
-            throw "Could not find packaged Windows app directory under ./out"
-          }
-
-          $zipName = "Xom-Nha-La-portable-$releaseTag.zip"
-          $zipPath = Join-Path $portableDir $zipName
-
-          if (Test-Path $zipPath) {
-            Remove-Item -Force $zipPath
-          }
-
-          Compress-Archive -Path (Join-Path $packagedAppDir.FullName '*') -DestinationPath $zipPath
-
-          "zip_name=$zipName" >> $env:GITHUB_OUTPUT
-          "zip_path=$zipPath" >> $env:GITHUB_OUTPUT
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: xom-nha-la-windows-release
-          path: |
-            out/make/portable/*.zip
-            out/make/**/*.exe
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Publish GitHub release assets
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.release_tag.outputs.release_tag }}
-          generate_release_notes: true
-          files: |
-            out/make/portable/*.zip
-            out/make/**/*.exe
-          fail_on_unmatched_files: true
-
-      - name: Publish download links
+          INPUT_TAG: ${{ inputs.tag_name }}
+          UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          RELEASE_TAG="${{ steps.release_tag.outputs.release_tag }}"
-          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}"
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          const {version} = JSON.parse(fs.readFileSync('package.json','utf8'));
+          if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Stable x.y.z required');
+          const tag = process.env.GITHUB_EVENT_NAME === 'push' ? process.env.GITHUB_REF_NAME : process.env.INPUT_TAG || `v${version}`;
+          if (tag !== `v${version}`) throw new Error('Tag must match package.json version');
+          const payload = Buffer.from('xom-update-key-check');
+          if (!crypto.verify(null,payload,fs.readFileSync('assets/update-public.pem'),crypto.sign(null,payload,process.env.UPDATE_SIGNING_PRIVATE_KEY))) throw new Error('UPDATE_SIGNING_PRIVATE_KEY does not match public key');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,`tag=${tag}\n`);
+          JS
+      - name: Verify existing tag points to this source
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse "$TAG^{commit}" >/dev/null 2>&1; then
+            test "$(git rev-parse "$TAG^{commit}")" = "$GITHUB_SHA" || { echo 'Existing tag points to different source; use a new version'; exit 1; }
+          fi
+      - name: Reject an already published version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --json isDraft > /tmp/existing.json 2>/dev/null; then
+            node -e "if(!require('/tmp/existing.json').isDraft) throw new Error('Version already public; increase version instead of overwriting')"
+          fi
 
-          {
-            echo "## Public Release Download"
-            echo
-            echo "- Release page: ${RELEASE_URL}"
-            echo "- Windows installer: https://github.com/${{ github.repository }}/releases/latest/download/XomNhaLaSetup.exe"
-            echo "- Portable ZIP is also available below."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          find out/make/portable -name '*.zip' | while read -r asset_path; do
-            asset_name="$(basename "$asset_path")"
-            download_url="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/${asset_name}"
-            echo "- ${asset_name}: ${download_url}" >> "$GITHUB_STEP_SUMMARY"
-            echo "Portable asset URL: ${download_url}"
-          done
-
-  release-macos:
-    name: Release macOS (${{ matrix.arch }})
-    needs: release-windows
-    runs-on: macos-latest
+  build:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
-        arch: [arm64, x64]
+        include:
+          - os: windows-latest
+            platform: win32
+            arch: x64
+          - os: macos-latest
+            platform: darwin
+            arch: arm64
+          - os: macos-latest
+            platform: darwin
+            arch: x64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-
       - run: npm ci
-
-      - name: Build macOS ZIP
-        run: npm run make:zip -- --arch=${{ matrix.arch }}
+      - run: npm run test:updater
+      - name: Build app
+        shell: bash
         env:
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           GOOGLE_WORKSPACE_DOMAIN: ${{ vars.GOOGLE_WORKSPACE_DOMAIN }}
           CLOSURE_SHEET_URL: ${{ vars.CLOSURE_SHEET_URL }}
           ANIMATION_NOTES_SHEET_URL: ${{ vars.ANIMATION_NOTES_SHEET_URL }}
-
-      - name: Name release archive
-        env:
-          RELEASE_TAG: ${{ needs.release-windows.outputs.release_tag }}
-          RELEASE_ARCH: ${{ matrix.arch }}
         run: |
-          mkdir -p out/make/release-macos
+          if [ '${{ matrix.platform }}' = win32 ]; then
+            npm run make:win -- --arch=${{ matrix.arch }}
+          else
+            npm run make:zip -- --arch=${{ matrix.arch }}
+          fi
+      - name: Create Windows portable ZIP
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          New-Item -ItemType Directory -Force -Path out/update-release | Out-Null
+          $Packaged = Get-ChildItem out -Directory | Where-Object { $_.Name -like '*win32-x64' } | Select-Object -First 1
+          if (-not $Packaged) { throw 'Packaged app missing' }
+          Compress-Archive -Path (Join-Path $Packaged.FullName '*') -DestinationPath "out/update-release/Xom-Nha-La-portable-$env:RELEASE_TAG.zip"
+          Copy-Item out/make/squirrel.windows/x64/XomNhaLaSetup.exe out/update-release/
+      - name: Name macOS ZIP
+        if: matrix.platform == 'darwin'
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          mkdir -p out/update-release
           ARCHIVE="$(find out/make/zip/darwin -name '*.zip' -type f -print -quit)"
-          test -n "$ARCHIVE" || { echo "macOS ZIP not found"; exit 1; }
-          cp "$ARCHIVE" "out/make/release-macos/Xom-Nha-La-macOS-${RELEASE_ARCH}-${RELEASE_TAG}.zip"
-
+          test -n "$ARCHIVE"
+          cp "$ARCHIVE" "out/update-release/Xom-Nha-La-macOS-${{ matrix.arch }}-${RELEASE_TAG}.zip"
+      - name: Sign update manifest
+        shell: bash
+        env:
+          UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if [ '${{ matrix.platform }}' = win32 ]; then
+            ARCHIVE="out/update-release/Xom-Nha-La-portable-${RELEASE_TAG}.zip"
+          else
+            ARCHIVE="out/update-release/Xom-Nha-La-macOS-${{ matrix.arch }}-${RELEASE_TAG}.zip"
+          fi
+          node scripts/sign-update.mjs "$ARCHIVE" '${{ matrix.platform }}' '${{ matrix.arch }}' out/update-release
       - uses: actions/upload-artifact@v4
         with:
-          name: xom-nha-la-macos-${{ matrix.arch }}
-          path: out/make/release-macos/*.zip
+          name: release-${{ matrix.platform }}-${{ matrix.arch }}
+          path: out/update-release/*
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish macOS download
-        uses: softprops/action-gh-release@v2
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
         with:
-          tag_name: ${{ needs.release-windows.outputs.release_tag }}
-          files: out/make/release-macos/*.zip
-          fail_on_unmatched_files: true
-
-      - name: Publish download link
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets
+      - run: node scripts/verify-release.mjs release-assets
+      - name: Publish only when all signed archives are ready
         env:
-          RELEASE_TAG: ${{ needs.release-windows.outputs.release_tag }}
-          RELEASE_ARCH: ${{ matrix.arch }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        shell: bash
         run: |
-          echo "## macOS ${RELEASE_ARCH}" >> "$GITHUB_STEP_SUMMARY"
-          echo "[Download ZIP](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/Xom-Nha-La-macOS-${RELEASE_ARCH}-${RELEASE_TAG}.zip)" >> "$GITHUB_STEP_SUMMARY"
+          if gh release view "$TAG" --json isDraft > /tmp/existing.json 2>/dev/null; then
+            node -e "if(!require('/tmp/existing.json').isDraft) throw new Error('Refusing to overwrite public release')"
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --draft --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" release-assets/* --clobber
+          gh release edit "$TAG" --draft=false --latest
+          echo "[Public download](https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG})" >> "$GITHUB_STEP_SUMMARY"

@@ -12,7 +12,10 @@
     "make:win": "electron-forge make --platform=win32",
     "make:zip": "electron-forge make --platform=darwin --targets=@electron-forge/maker-zip",
     "publish": "electron-forge publish",
-    "lint": "echo \"No linting configured\""
+    "lint": "echo \"No linting configured\"",
+    "update:keygen": "node scripts/create-update-key.mjs",
+    "test:updater": "node --test scripts/update-security.test.mjs",
+    "update:sign": "node scripts/sign-update.mjs"
   },
   "keywords": [],
   "author": {
@@ -36,6 +39,7 @@
     "gifenc": "^1.0.3",
     "gifsicle-wasm-browser": "^1.5.19",
     "pixi-spine": "^4.0.6",
-    "pixi.js": "^7.4.3"
+    "pixi.js": "^7.4.3",
+    "yauzl": "^3.4.0"
   }
 }

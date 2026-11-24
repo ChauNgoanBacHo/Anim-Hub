@@ -33,3 +33,6 @@ temp/
 *.tsbuildinfo
 *.swp
 *.swo
+
+# Never package or commit update signing private keys
+*update-private*.pem

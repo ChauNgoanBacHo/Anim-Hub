@@ -1,0 +1,18 @@
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import path from 'node:path';
+import os from 'node:os';
+import {UPDATE_APP_ID,artifactName,manifestName,sha256File,verifyManifest} from '../src/shared/update-security.mjs';
+const [archive, platform, arch, outDir = path.dirname(archive || '.')] = process.argv.slice(2);
+if (!archive || !['darwin','win32'].includes(platform) || !['arm64','x64'].includes(arch)) throw new Error('Usage: node scripts/sign-update.mjs ZIP darwin|win32 arm64|x64 [outdir]');
+const {version} = JSON.parse(fs.readFileSync('package.json','utf8'));
+if (path.basename(archive) !== artifactName(version,platform,arch)) throw new Error('Artifact name/version không khớp package.json.');
+const key = process.env.UPDATE_SIGNING_PRIVATE_KEY || fs.readFileSync(process.env.UPDATE_SIGNING_KEY_PATH || path.join(os.homedir(),'.config','xom-nha-la','update-private.pem'),'utf8');
+const publicKey = fs.readFileSync('assets/update-public.pem','utf8');
+const data = {schema:1,appId:UPDATE_APP_ID,version,platform,arch,file:path.basename(archive),size:fs.statSync(archive).size,sha256:await sha256File(archive)};
+const payload = Buffer.from(JSON.stringify(data));
+const envelope = {payload:payload.toString('base64'),signature:crypto.sign(null,payload,key).toString('base64')};
+verifyManifest(envelope,publicKey,{platform,arch,version});
+fs.mkdirSync(outDir,{recursive:true});
+fs.writeFileSync(path.join(outDir,manifestName(platform,arch)),JSON.stringify(envelope,null,2)+'\n');
+console.log(`Signed ${data.file} → ${manifestName(platform,arch)}`);

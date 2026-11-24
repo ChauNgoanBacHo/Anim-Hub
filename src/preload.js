@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('spinePreview', {
+  appUpdateState: () => ipcRenderer.invoke('app-update-state'),
+  installAppUpdate: () => ipcRenderer.invoke('install-app-update'),
+  onAppUpdateState: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on('app-update-state', listener);
+    return () => ipcRenderer.removeListener('app-update-state', listener);
+  },
+  checkAppUpdate: () => ipcRenderer.invoke('check-app-update'),
+  downloadAppUpdate: () => ipcRenderer.invoke('download-app-update'),
   onCatalogScanProgress: (callback) => {
     const listener = (_event, message) => callback(message);
     ipcRenderer.on('catalog-scan-progress', listener);

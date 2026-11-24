@@ -11,6 +11,7 @@ src/
   renderer.js          state, HTML templates, events, dialogs, GIF encoding
   index.css            theme, layout feature, dialog/popover và responsive
   spineStage.js        PixiJS + pixi-spine adapter
+  appUpdater.js        signed updater Windows/macOS, download, staging, helper IPC
   googleWorkspace.js   OAuth, Sheets/Drive API, queue, notes, owner, folder picker
   shared/assetUrl.js   helper URL asset local
 apps-script/
@@ -114,3 +115,7 @@ Owner transfer có control theo sender để Cancel, đi qua cây Drive và chuy
 - Shared Drive/ownership phụ thuộc quyền và chính sách Google; supportAllDrives ở API không bảo đảm mọi thao tác được phép.
 - Worker hiện một Sheet cố định. Không coi database notes và queue worker là cùng một luồng.
 - Còn một số state/helper cũ tương thích; đọc callsite trước xoá. Tài liệu này không khẳng định mã đã được module hoá hay có unit test đầy đủ.
+
+## Auto-update
+
+Updater riêng ở `src/appUpdater.js`, dùng Ed25519 + SHA-256, ZIP đầy đủ, helper ngoài app để backup/swap/relaunch. Public key/helpers được packager copy vào Resources; private key ngoài repo. Chi tiết, setup CI và giới hạn test: [auto-update.md](auto-update.md). Không dùng Squirrel.Mac; không cần Apple certificate.

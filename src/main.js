@@ -13,6 +13,7 @@ import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
+import { registerAppUpdater } from "./appUpdater.js";
 import started from "electron-squirrel-startup";
 import { registerGoogleWorkspaceHandlers, scanDriveCatalog, attachDriveFolderLinks } from "./googleWorkspace.js";
 
@@ -229,11 +230,12 @@ function scanLocalCatalog(rootPath, options = {}) {
           item.fileNames = [...matchingFonts.map((entry) => entry.name).sort(), item.name];
         }
       }
-      const views = items.filter((item) => !item.type && /(?:^|[_\- ])view(?:[_\- .]|$)/i.test(item.name));
+      const allStatic = stripProjectPrefix(category.name).toLowerCase() === "bigwin-jpwin-totalwin";
+      const views = allStatic ? [] : items.filter((item) => !item.type && /(?:^|[_\- ])view(?:[_\- .]|$)/i.test(item.name));
       const grouped = [], states = new Map();
       for (const item of items.filter((item) => !views.includes(item))) {
         const match = item.name.match(/^(.*?)[_\- ](normal|pressed|hover|disable|disabled)\.(png|jpe?g|webp)$/i);
-        if (!match || item.type === "Bitmap Font") { grouped.push(item); continue; }
+        if (allStatic || !match || item.type === "Bitmap Font") { grouped.push(item); continue; }
         const key = `${item.group}\n${match[1]}`.toLowerCase();
         if (!states.has(key)) {
           const group = { ...item, name: match[1], previewPaths: [], fileNames: [] };
@@ -548,6 +550,7 @@ async function validateScanFolder(folder, mode) {
 }
 
 function registerIpcHandlers() {
+  registerAppUpdater();
   ipcMain.handle("scan-upload-gifs", async (_event, folder) => {
     try {
       await validateScanFolder(folder, "gif");

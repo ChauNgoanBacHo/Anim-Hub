@@ -1490,3 +1490,14 @@ body[data-module="ownership"] .owner-move-section .module-actions { margin:0; ju
 .exporter-page .gif-opt-option .checker-export { margin:0; min-height:38px; box-sizing:border-box; }
 
 .exporter-page .gif-opt-option .checker-export span::before { content:none; display:none; }
+
+.update-dialog { max-width:520px; }
+.update-dialog p { color:#d3dbe5; font-size:16px; line-height:1.6; }
+
+.update-dialog progress { width:100%; accent-color:#80e1c5; }
+.update-dialog .update-error { color:#ffb0bc; }
+.update-dialog small { color:#b6c0cd; }
+
+.feature-account .app-update-control { display:flex; align-items:center; gap:10px; padding-left:16px; margin-left:4px; border-left:1px solid #383e47; white-space:nowrap; }
+.feature-account .app-update-control .app-version { margin:0; color:#aeb9c8; font-size:13px; font-weight:600; }
+@media (max-width:680px) { .feature-account { flex-wrap:wrap; justify-content:flex-end; } .feature-account .app-update-control { padding-left:10px; gap:8px; } }

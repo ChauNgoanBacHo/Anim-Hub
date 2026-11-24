@@ -31,6 +31,7 @@ Section UI có ô Link folder source không bắt buộc. Khi có link và uploa
 - Output Images của Spine lấy PNG trong folder; ảnh có nội dung trùng được loại trùng trước khi ghép thumbnail. Không render animation ở cột này.
 - UI bitmap font: PNG có file `.fnt` cùng tên hoặc được khai báo trong page của `.fnt` có Type `Bitmap Font`; File Name liệt kê `.fnt` và PNG tương ứng.
 - UI gom các file cùng button theo Normal → Pressed → Hover → Disable/Disabled. Output Images hiển thị các state trong cùng ô; File Name liệt kê các file.
+- Ngoại lệ folder `*_BigWin-JPWin-TotalWin`: so khớp `bigwin-jpwin-totalwin` không phân biệt hoa thường, giữ nguyên tên hiển thị; mọi ảnh (kể cả View) là item Static riêng ở Output Images, không đưa sang Demo.
 - Ảnh UI có tên `_View_` chuyển sang Demo, không tính như item bình thường. Demo của Animation dùng GIF upload ở feature 3.
 
 ### Ghi và huỷ

@@ -57,5 +57,6 @@ Chèn ảnh/GIF dùng thêm Apps Script trigger của người cài worker. Tài
 - [Cấu trúc source, IPC và luồng dữ liệu](docs/architecture.md)
 - [Apps Script worker và xử lý lỗi](apps-script/README.md)
 - [Build và release public](docs/build-release.md)
+- [Auto-update Windows/macOS, key và CI setup](docs/auto-update.md)
 
 Asset local không bị sửa khi scan/export. Clear Sheet, ghi đè tab, di chuyển Sheet và chuyển owner là các thao tác có thay đổi dữ liệu trên Google.

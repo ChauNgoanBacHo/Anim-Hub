@@ -1,0 +1,12 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+const privatePath = process.env.UPDATE_SIGNING_KEY_PATH || path.join(os.homedir(),'.config','xom-nha-la','update-private.pem');
+const publicPath = path.resolve('assets/update-public.pem');
+if (fs.existsSync(privatePath) || fs.existsSync(publicPath)) throw new Error('Key đã tồn tại. Không ghi đè/đổi key tự động.');
+const keys = crypto.generateKeyPairSync('ed25519');
+fs.mkdirSync(path.dirname(privatePath), {recursive:true,mode:0o700});
+fs.writeFileSync(privatePath, keys.privateKey.export({type:'pkcs8',format:'pem'}), {mode:0o600,flag:'wx'});
+fs.writeFileSync(publicPath, keys.publicKey.export({type:'spki',format:'pem'}), {flag:'wx'});
+console.log(`Public key: ${publicPath}\nPrivate key lưu ngoài repo: ${privatePath}\nBackup private key; đưa nội dung vào GitHub Actions secret UPDATE_SIGNING_PRIVATE_KEY.`);

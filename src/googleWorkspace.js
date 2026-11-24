@@ -210,7 +210,8 @@ export async function scanDriveCatalog(folderUrl, source, onProgress = () => {})
         for (const file of files.filter((f) => f.mimeType.startsWith("image/"))) {
           readFiles += 1;
           const item = { name:file.name, kind:"image", group, driveFolderUrl:link(folder.id), driveFolderName:folder.name, driveImages:[{id:file.id,name:file.name}] };
-          (/(?:^|[_\- ])view(?:[_\- .]|$)/i.test(file.name) ? views : items).push(item);
+          const allStatic = category.name.replace(/^\d+_/, "").toLowerCase() === "bigwin-jpwin-totalwin";
+          (!allStatic && /(?:^|[_\- ])view(?:[_\- .]|$)/i.test(file.name) ? views : items).push(item);
         }
       }
     }

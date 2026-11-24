@@ -3,7 +3,12 @@ const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
 module.exports = {
   packagerConfig: {
+    name: 'XomNhaLa',
     asar: true,
+    executableName: 'XomNhaLa',
+    extendInfo: { CFBundleDisplayName: 'Xóm Nhà Lá' },
+    appBundleId: 'io.enotion.xom-nha-la',
+    extraResource: ['assets/updater', 'assets/update-public.pem'],
     icon: 'assets/icon',
   },
   rebuildConfig: {},

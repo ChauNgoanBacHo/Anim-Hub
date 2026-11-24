@@ -421,8 +421,56 @@ async function encodeWithinSize({
   return result;
 }
 
+let updateState = {status:"idle",available:false};
+window.spinePreview.onAppUpdateState?.((value) => {
+  updateState = value;
+  app.querySelectorAll('[data-do="check-app-update"]').forEach((button) => { button.textContent = value.available ? "Có bản cập nhật" : "Cập nhật"; });
+  app.querySelectorAll("[data-app-version]").forEach((label) => { label.textContent = value.current ? `v${value.current}` : ""; });
+});
+async function showAppUpdates() {
+  if (document.querySelector(".update-dialog")) return;
+  const dialog = document.createElement("dialog"); dialog.className = "note-dialog update-dialog";
+  const busyStatuses = ["checking","downloading","installing"];
+  function paint(value) {
+    if (!dialog.open) return;
+    const messages = {
+      idle:"Kiểm tra bản mới trên GitHub Releases.",
+      checking:"Đang kiểm tra bản mới và chữ ký release…",
+      available:`Có bản ${value.latest}. Tải bản mới dưới nền, sau đó khởi động lại để cài.`,
+      downloading:`Đang tải bản ${value.latest} · ${Math.round((value.progress || 0)*100)}%`,
+      ready:`Bản ${value.latest} đã tải và xác thực. Lưu công việc trước khi khởi động lại để cài.`,
+      installing:"Đang kiểm tra và chuẩn bị cài. App sẽ đóng khi helper sẵn sàng…",
+      current:"Bạn đang dùng phiên bản mới nhất hiện có cho app.",
+      unavailable:`GitHub có bản ${value.latest}, nhưng bản này chưa hỗ trợ cập nhật tự động cho máy của bạn. Bạn vẫn có thể tiếp tục dùng bản ${value.current}.`,
+      installed:`Đã chạy bản ${value.installedVersion} sau cập nhật.`,
+      error:"Không thể kiểm tra hoặc tải bản cập nhật lúc này.",
+    };
+    dialog.innerHTML = `<h2>Cập nhật Xóm</h2><small>Phiên bản đang dùng: ${esc(value.current || "")}</small><p role="status">${esc(messages[value.status] || "")}</p>${value.error ? `<p class="update-error" role="alert">${esc(value.error)}</p>` : ""}${value.status === "downloading" ? `<progress max="1" value="${value.progress || 0}"></progress>` : ""}<div class="module-actions"><button class="copy-sheet-action" data-close ${value.status === "installing" ? "disabled" : ""}>Đóng</button>${!busyStatuses.includes(value.status) ? value.status === "ready" ? `<button class="primary-action" data-install>Khởi động lại & cài</button>` : value.status === "available" ? `<button class="primary-action" data-download>Tải cập nhật</button>` : `<button class="primary-action" data-check>Kiểm tra lại</button>` : ""}</div>`;
+    dialog.querySelector("[data-close]").onclick = () => dialog.close();
+    dialog.querySelector("[data-check]")?.addEventListener("click",()=>window.spinePreview.checkAppUpdate().catch(showError));
+    dialog.querySelector("[data-download]")?.addEventListener("click",()=>window.spinePreview.downloadAppUpdate().catch(showError));
+    dialog.querySelector("[data-install]")?.addEventListener("click",async () => {
+      if (state.exporting || state.workspace.busy || state.ownership.busy || state.notes.busy || state.notes.saving || state.notes.dirty) { showError(new Error("Hoàn tất tác vụ và lưu ghi chú trước khi cập nhật bro.")); return; }
+      try { await window.spinePreview.installAppUpdate(); } catch(error) {showError(error);}
+    });
+  }
+  function showError(error) {paint({...updateState,error:error.message});}
+  dialog.addEventListener("cancel",(event)=>{if(updateState.status === "installing") event.preventDefault();});
+  const unsubscribe = window.spinePreview.onAppUpdateState(paint);
+  dialog.addEventListener("close",()=>{unsubscribe();dialog.remove();},{once:true});
+  document.body.append(dialog); dialog.showModal();
+  try {
+    updateState = await window.spinePreview.appUpdateState(); paint(updateState);
+    if (["idle","current","error"].includes(updateState.status)) await window.spinePreview.checkAppUpdate();
+  } catch(error) {showError(error);}
+}
+
+function appUpdateControl() {
+  return `<div class="app-update-control"><span class="app-version" data-app-version>${updateState.current ? `v${esc(updateState.current)}` : ""}</span><button data-do="check-app-update">${updateState.available ? "Có bản cập nhật" : "Cập nhật"}</button></div>`;
+}
+
 function appNav() {
-  return `<div class="feature-topbar"><button class="feature-back" data-do="back-home">← Về Xóm</button><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login for Google Sheets" : "OAuth chưa cấu hình"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></div>`;
+  return `<div class="feature-topbar"><button class="feature-back" data-do="back-home">← Về Xóm</button><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login for Google Sheets" : "OAuth chưa cấu hình"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}${appUpdateControl()}</div></div>`;
 }
 
 app.addEventListener("click", async (event) => {
@@ -469,7 +517,7 @@ function renderHome() {
     ["naming", "05", "Cảnh sát chính tả", "Kiểm tra folder, file và animation name trước handoff."],
     ["notes", "06", "Sổ tay animation", "Ghi cách gọi animation để dev tra cứu và implement nhanh hơn."],
   ];
-app.innerHTML = `<main class="feature-home"><header><div class="app-logo"><img class="mascot-logo" src="${mascotIcon}" alt="Xóm Nhà Lá"><div><strong>Xóm Nhà Lá</strong><span>Bộ đồ nghề của cả xóm</span></div></div><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login để dùng Google Sheets" : "Build chưa có OAuth Client ID"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}</div></header><section class="feature-hero"><small>NHỎ MÀ CÓ VÕ</small><h1>Chuyện gì cũng có tool.</h1></section><section class="feature-columns">${[["Closure", "Tạo tài liệu và hoàn tất bàn giao", features.slice(0, 4)], ["Handoff", "Kiểm tra asset và hướng dẫn implement", features.slice(4)]].map(([group, subtitle, items]) => `<section class="feature-category"><div class="feature-category-title"><h2>${group}</h2><p>${subtitle}</p></div><div class="feature-grid">${items.map(([id, number, title, description]) => `<button data-do="switch-module" data-module="${id}"><span class="feature-number">${number}</span><i class="feature-symbol" aria-hidden="true">${({ catalog: "▦", export: "▶", upload: "↥", naming: "Aa", ownership: "⇄", notes: "≡" })[id]}</i><div><h2>${title}</h2><p>${description}</p></div></button>`).join("")}</div></section>`).join("")}</section><footer class="app-credit">Powered by TiTi</footer></main>`;
+app.innerHTML = `<main class="feature-home"><header><div class="app-logo"><img class="mascot-logo" src="${mascotIcon}" alt="Xóm Nhà Lá"><div><strong>Xóm Nhà Lá</strong><span>Bộ đồ nghề của cả xóm</span></div></div><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login để dùng Google Sheets" : "Build chưa có OAuth Client ID"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}${appUpdateControl()}</div></header><section class="feature-hero"><small>NHỎ MÀ CÓ VÕ</small><h1>Chuyện gì cũng có tool.</h1></section><section class="feature-columns">${[["Closure", "Tạo tài liệu và hoàn tất bàn giao", features.slice(0, 4)], ["Handoff", "Kiểm tra asset và hướng dẫn implement", features.slice(4)]].map(([group, subtitle, items]) => `<section class="feature-category"><div class="feature-category-title"><h2>${group}</h2><p>${subtitle}</p></div><div class="feature-grid">${items.map(([id, number, title, description]) => `<button data-do="switch-module" data-module="${id}"><span class="feature-number">${number}</span><i class="feature-symbol" aria-hidden="true">${({ catalog: "▦", export: "▶", upload: "↥", naming: "Aa", ownership: "⇄", notes: "≡" })[id]}</i><div><h2>${title}</h2><p>${description}</p></div></button>`).join("")}</div></section>`).join("")}</section><footer class="app-credit">Powered by TiTi</footer></main>`;
 }
 
 function pageNotice() {
@@ -1387,6 +1435,8 @@ app.addEventListener("click", async (e) => {
     state.module = b.dataset.module;
     render();
     if (state.module === "export" && state.source && !state.files.length) scan();
+  } else if (a === "check-app-update") {
+    await showAppUpdates();
   } else if (a === "back-home") {
     state.workspace.message = "";
     state.workspace.error = "";
@@ -1899,6 +1949,10 @@ const finishBoot = () => {
   if (!bootFinished) { bootFinished = true; render(); }
 };
 const bootTimeout = setTimeout(finishBoot, 6000);
+window.spinePreview.appUpdateState?.().then((value) => {
+  updateState = value;
+  app.querySelectorAll("[data-app-version]").forEach((label) => { label.textContent = value.current ? `v${value.current}` : ""; });
+}).catch(() => {});
 window.spinePreview.googleStatus().then((result) => {
   state.google.configured = Boolean(result?.configured);
   state.google.signedIn = Boolean(result?.signedIn);

@@ -19,7 +19,7 @@ npm run make:zip -- --arch=arm64
 npm run make:zip -- --arch=x64
 ```
 
-Output `out/`, maker output `out/make/`. App name Xóm Nhà Lá, package xom-nha-la, installer `XomNhaLaSetup.exe`. Icon nằm trong assets; xem `render-icon.cjs` và Forge config trước tạo lại.
+Output `out/`, maker output `out/make/`. Tên hiển thị Xóm Nhà Lá, bundle/executable nội bộ XomNhaLa.app/XomNhaLa (Windows XomNhaLa.exe), package xom-nha-la, installer `XomNhaLaSetup.exe`. Icon nằm trong assets; xem `render-icon.cjs` và Forge config trước tạo lại.
 
 ## Environment trong GitHub
 
@@ -43,24 +43,13 @@ Hiện source vẫn trigger **push main** và manual workflow_dispatch. Build in
 
 ### Release Public Download — release-public.yml
 
-Trigger tag `v*` hoặc Actions → Run workflow. Chọn main cho manual, nhập tag mới (ví dụ `v1.0.1`); bỏ trống dùng version package.json. Manual tạo tag nếu chưa có, tag đã có sẽ được reuse, không tự trỏ lại commit mới.
+Trigger tag v* hoặc manual từ main. Tag phải khớp package.json và chưa có release public; tag có sẵn phải trỏ đúng commit build. Cần secret `UPDATE_SIGNING_PRIVATE_KEY` khớp public key trong repo.
 
-- Windows job tạo installer và ZIP portable, upload vào GitHub Release.
-- macOS job phụ thuộc Windows, matrix arm64/x64, build ZIP và upload cùng release.
-- Artifact phụ giữ 7 ngày; release assets là nơi tải cho user.
-- Link: https://github.com/ChauNgoanBacHo/Anim-Hub/releases
-- Public download không cần tài khoản chỉ khi repository/release được công khai.
+Workflow prepare kiểm tra version/key → matrix Windows x64 + macOS arm64/x64 → ký từng manifest → upload artifact tạm → publish job verify đủ 3 ZIP và manifest → tạo/reuse draft → upload đủ rồi mới public. Không ghi đè release đã công bố.
 
-Tên file hiện tại:
+Release có Windows installer, ZIP portable, hai ZIP macOS và ba signed manifest. Artifact phụ giữ 7 ngày. Link tải: https://github.com/ChauNgoanBacHo/Anim-Hub/releases (repo/release phải public).
 
-```text
-Xom-Nha-La-portable-<tag>.zip
-XomNhaLaSetup.exe
-Xom-Nha-La-macOS-arm64-<tag>.zip
-Xom-Nha-La-macOS-x64-<tag>.zip
-```
-
-Chạy lại job cũ dùng revision workflow cũ, có thể chưa chứa macOS. Chạy workflow từ main đã có thay đổi để build bản mới. Đợi cả macOS jobs hoàn tất trước kiểm tra asset. macOS hiện không cấu hình Apple signing/notarization.
+macOS không cấu hình Apple signing/notarization; updater riêng dùng chữ ký Ed25519. Chi tiết cấu hình key, helper và luồng cập nhật tại [Auto-update](auto-update.md).
 
 ## Kiểm tra trước phát hành
 
@@ -72,3 +61,7 @@ Chạy lại job cũ dùng revision workflow cũ, có thể chưa chứa macOS. 
 - Chuyển owner/di chuyển file là thao tác thật; chỉ thử trên tài nguyên được phép.
 
 `npm run lint` hiện là placeholder, không phải kiểm tra chất lượng tự động. Workflow đang dùng Node 20 và actions v4 trong source; tài liệu không coi cảnh báo deprecation đã được xử lý.
+
+## Cập nhật trong app
+
+Nút Cập nhật nay kiểm tra signed release, tải nền có progress và **Khởi động lại & cài** bằng helper Windows/macOS. Không còn chỉ mở link browser. App cũ cần cài thủ công bản chuyển tiếp một lần. Xem [Auto-update](auto-update.md) để setup CI secret và release đúng version.

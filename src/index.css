@@ -1501,5 +1501,3 @@ body[data-module="ownership"] .owner-move-section .module-actions { margin:0; ju
 .feature-account .app-update-control { display:flex; align-items:center; gap:10px; padding-left:16px; margin-left:4px; border-left:1px solid #383e47; white-space:nowrap; }
 .feature-account .app-update-control .app-version { margin:0; color:#aeb9c8; font-size:13px; font-weight:600; }
 @media (max-width:680px) { .feature-account { flex-wrap:wrap; justify-content:flex-end; } .feature-account .app-update-control { padding-left:10px; gap:8px; } }
-
-.app-credit .credit-version { display:block; margin-top:4px; font-size:12px; line-height:1.4; color:#7f867e; font-weight:500; }

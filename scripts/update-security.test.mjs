@@ -93,3 +93,18 @@ test('Windows helper replaces portable directory and restores on immediate launc
   }
  } finally {fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('read staged ASAR package using raw archive parser, including a replaced archive',async()=>{
+ const asar = (await import('@electron/asar')).default;
+ const {readUpdatePackage} = await import('../src/shared/update-package.mjs');
+ const root = fs.mkdtempSync(path.join(os.tmpdir(),'xom asar package '));
+ try {
+  const input=path.join(root,'input'),archive=path.join(root,'app.asar');fs.mkdirSync(input);
+  for(const version of ['1.0.3','1.0.4']) {
+   fs.writeFileSync(path.join(input,'package.json'),JSON.stringify({name:'xom-nha-la',version}));
+   await asar.createPackage(input,archive);
+   assert.equal(readUpdatePackage(archive).version,version);
+  }
+  fs.writeFileSync(archive,'invalid');assert.throws(()=>readUpdatePackage(archive));
+ } finally {fs.rmSync(root,{recursive:true,force:true});}
+});

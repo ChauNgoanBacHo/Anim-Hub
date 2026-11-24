@@ -105,3 +105,7 @@ Sau release cần kiểm tra A → B trên Windows thật và macOS thật: đú
 Backup/cache/helper được giữ để chẩn đoán; chưa có chính sách dọn theo số bản. Không hỗ trợ delta update, resume, prerelease, Linux hoặc chuyển key nhiều bước.
 
 Tên bundle/executable/helper nội bộ dùng ASCII để tránh Archive Utility/Finder chuyển Unicode NFC sang NFD làm Electron crash trước khi vào main. CFBundleDisplayName và giao diện giữ Xóm Nhà Lá. Khi test ZIP cần test cả giải nén theo Finder/NFD, không chỉ ditto hoặc updater extractor.
+
+## Sửa lỗi Invalid package khi chuẩn bị cài (1.0.4)
+
+Bước kiểm tra package của app staged dùng `src/shared/update-package.mjs` và @electron/asar/original-fs thay cho fs đọc đường dẫn bên trong app.asar. Không tắt integrity fuse của app đang cài. Có regression test đọc archive mới và archive bị thay tại cùng đường dẫn. Client cũ có lỗi này cần cài tay bản sửa một lần; sau đó tiếp tục dùng luồng updater.

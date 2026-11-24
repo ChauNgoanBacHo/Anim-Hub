@@ -6,6 +6,7 @@ import {spawn,execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {pipeline} from 'node:stream/promises';
 import {Readable,Transform} from 'node:stream';
+import {readUpdatePackage} from './shared/update-package.mjs';
 import {UPDATE_APP_ID,UPDATE_REPO,PRODUCT_NAME,EXECUTABLE_NAME,BUNDLE_NAME,manifestName,verifyManifest,verifyArchive,newerVersion} from './shared/update-security.mjs';
 import {extractUpdateZip} from './shared/update-zip.mjs';
 const run = promisify(execFile);
@@ -124,9 +125,10 @@ async function validatePrepared(prepared,manifest) {
       if(pe.readUInt32LE(0)!==0x4550 || pe.readUInt16LE(4)!==(process.arch==='arm64'?0xaa64:0x8664)) throw new Error('Executable không đúng kiến trúc.');
     } finally {await handle.close();}
   }
-  // Electron's fs supports app.asar paths. Verify the staged app identity, not just the outer ZIP.
+  // Read the staged archive as raw bytes via original-fs, not Electron's mounted
+  // ASAR layer (which can reject an external archive with integrity fuses enabled).
   const asar = process.platform === 'darwin' ? path.join(prepared,'Contents','Resources','app.asar') : path.join(prepared,'resources','app.asar');
-  const pkg = JSON.parse(await fs.promises.readFile(path.join(asar,'package.json'),'utf8'));
+  const pkg = readUpdatePackage(asar);
   if (pkg.name !== 'xom-nha-la' || pkg.productName !== PRODUCT_NAME || pkg.version !== manifest.version) throw new Error('Package trong app không khớp bản cập nhật.');
 }
 async function install() {

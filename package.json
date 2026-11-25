@@ -1,7 +1,7 @@
 {
   "name": "xom-nha-la",
   "productName": "Xóm Nhà Lá",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Xóm Nhà Lá — Chuyện gì cũng có tool. Asset catalog, Spine GIF export, closure upload and naming checks.",
   "main": ".vite/build/main.js",
   "private": true,

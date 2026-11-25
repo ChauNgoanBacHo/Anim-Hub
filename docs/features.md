@@ -6,7 +6,7 @@ Cập nhật 17/11/2026. Mô tả hành vi đang có trong source, không phải
 
 Tick Animation, UI hoặc cả hai. Mỗi section có hai nguồn phải điền:
 
-- **Link Drive · lấy link folder cho sheet**: chỉ tìm folder tương ứng để gắn link ở cột Folder.
+- **Link Drive · lấy link folder cho sheet**: nhập link hoặc dùng Browse Drive ở cả Animation/UI; popup dùng chung trang Chuyển owner (folder được chia sẻ, search, breadcrumb). Chọn folder sẽ lưu link và xoá kết quả scan cũ để scan lại. Chỉ tìm folder tương ứng để gắn link ở cột Folder.
 - **Local · nguồn thông tin và upload ảnh lên sheet**: đọc file, JSON Spine, kích thước ảnh và tạo thumbnail.
 
 Chọn đúng folder Animation/UI của game, ví dụ `9676_Animations` và `9676_UI_EN`. Tên folder category/asset local cần khớp Drive. `_Cocos` được bỏ qua trong luồng catalog. Có kiểm tra giới hạn folder để tránh scan nhầm cây thư mục quá lớn.

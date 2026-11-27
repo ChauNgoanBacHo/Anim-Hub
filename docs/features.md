@@ -115,3 +115,5 @@ Feature offline trong nhóm Handoff, không cần Google login. Chọn riêng fi
 Nhập nội dung bất kỳ hoặc chọn mẫu tiền tệ USD/VND/EUR/BRL/PHP/THB. Chỉnh cỡ chữ, spacing, chiều rộng khung và màu nền. Preview áp dụng offset, advance, kerning và glyph Unicode; đánh dấu ký tự thiếu bằng ô đỏ/mã Unicode, báo tràn ngang bằng px. Không tự co chữ để giấu lỗi tràn.
 
 Source: `src/fontLab.js` (UI/canvas), `src/shared/bitmap-font.mjs` (parser/layout), IPC `load-bitmap-font` trong main/preload. Metadata tối đa 4 MB, texture 20 MB/file và 64 MB/font, không đọc texture ngoài thư mục font. Test parser/layout: `node --test tests/bitmap-font.test.mjs`.
+
+Create/Update Sheet định dạng tuần tự từng tab, mỗi batch tối đa 100 thao tác; thử lại tối đa 3 lần với lỗi Google 429/500/502/503/504. Có kiểm tra Cancel giữa các batch và lần thử lại.

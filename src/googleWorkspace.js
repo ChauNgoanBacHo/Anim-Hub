@@ -368,15 +368,16 @@ async function createCatalog(sheetUrl, catalog, operationId) {
   stage = "Đọc lại danh sách tab";
   const refreshed = await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`, { headers: { Authorization: `Bearer ${token}` } });
   const sheetIds = new Map((refreshed.sheets || []).map((sheet) => [sheet.properties.title, sheet.properties.sheetId]));
-  const layoutRequests = catalog.tabs.flatMap((tab) => {
+  for (const tab of catalog.tabs) {
+    checkCatalogOperation(operationId);
     const sheetId = sheetIds.get(safeSheetTitle(tab.title));
-    if (sheetId == null) return [];
+    if (sheetId == null) continue;
     const dataRowHeight = 220;
     const rowCount = Math.max(2, tab.items.length + 1, (tab.views || []).length + 1);
     const columnCount = tab.source === "ui" ? 9 : 8;
     const statusIndex = tab.source === "ui" ? 6 : 5;
     const widths = tab.source === "ui" ? [40,70,300,220,290,140,80,300,300] : [40,70,300,220,290,80,300,300];
-    return [
+    const layoutRequests = [
       { repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: rowCount, startColumnIndex: 4, endColumnIndex: 5 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE" } }, fields: "userEnteredFormat(horizontalAlignment,verticalAlignment)" } },
       ...(tab.source === "ui" ? [{ repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: rowCount, startColumnIndex: 5, endColumnIndex: 6 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE" } }, fields: "userEnteredFormat(horizontalAlignment,verticalAlignment)" } }] : []),
       ...tab.items.map((item, index) => ({ repeatCell: { range: { sheetId, startRowIndex:index + 1, endRowIndex:index + 2, startColumnIndex:3, endColumnIndex:4 }, cell: { userEnteredFormat: { horizontalAlignment:"CENTER", verticalAlignment:"MIDDLE", textFormat: item.driveFolderUrl ? { link:{ uri:item.driveFolderUrl }, underline:true, foregroundColor:{ red:.15, green:.35, blue:.8 } } : { underline:false, foregroundColor:{red:0,green:0,blue:0} } } }, fields:"userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)" } })),
@@ -394,11 +395,21 @@ async function createCatalog(sheetUrl, catalog, operationId) {
       { repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: rowCount, startColumnIndex: 2, endColumnIndex: 3 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE" } }, fields: "userEnteredFormat(horizontalAlignment,verticalAlignment)" } },
       { updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: 1 } }, fields: "gridProperties.frozenRowCount" } },
     ];
-  });
-  checkCatalogOperation(operationId);
-  stage = `Định dạng các tab: ${desiredTitles.join(", ")}`;
-  if (layoutRequests.length) {
-    await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ requests: layoutRequests }) });
+    // Formatting operations are idempotent; keep each batch small and retry transient errors.
+    for (let offset = 0; offset < layoutRequests.length; offset += 100) {
+      stage = `Định dạng tab ${tab.title} · phần ${Math.floor(offset / 100) + 1}`;
+      const body = JSON.stringify({ requests: layoutRequests.slice(offset, offset + 100) });
+      for (let attempt = 0; ; attempt++) {
+        checkCatalogOperation(operationId);
+        try {
+          await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body });
+          break;
+        } catch (error) {
+          if (attempt >= 3 || !/^Google API (429|500|502|503|504):/.test(error.message)) throw error;
+          await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** attempt + Math.random() * 500));
+        }
+      }
+    }
   }
   checkCatalogOperation(operationId);
 

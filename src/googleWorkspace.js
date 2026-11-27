@@ -363,7 +363,7 @@ async function createCatalog(sheetUrl, catalog, operationId) {
   const layoutRequests = catalog.tabs.flatMap((tab) => {
     const sheetId = sheetIds.get(safeSheetTitle(tab.title));
     if (sheetId == null) return [];
-    const dataRowHeight = 260;
+    const dataRowHeight = tab.source === "ui" && tab.title.replace(/^\d+_/, "").toLowerCase() === "bigwin-jpwin-totalwin" ? 244 : 260;
     const rowCount = Math.max(2, tab.items.length + 1, (tab.views || []).length + 1);
     const columnCount = tab.source === "ui" ? 9 : 8;
     const statusIndex = tab.source === "ui" ? 6 : 5;

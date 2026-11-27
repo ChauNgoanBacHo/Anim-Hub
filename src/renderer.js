@@ -1555,7 +1555,7 @@ app.addEventListener("click", async (e) => {
       w.error = result?.error || "Không tạo được Sheet catalog.";
     } else {
       const images = uploadCatalog.tabs.flatMap((tab) => [
-        ...tab.items.map((item, index) => ({ ...item, tab: tab.title, row: index + 2, column: "C" })).filter((item) => item.kind === "image" || item.pngPaths?.length || item.driveImages?.length),
+        ...tab.items.map((item, index) => ({ ...item, tab: tab.title, row: index + 2, column: tab.source === "ui" && tab.title.replace(/^\d+_/, "").toLowerCase() === "bigwin-jpwin-totalwin" ? "H" : "C" })).filter((item) => item.kind === "image" || item.pngPaths?.length || item.driveImages?.length),
         ...(tab.views || []).map((item, index) => ({ ...item, tab: tab.title, row: index + 2, column: "I" })),
       ]);
       try {

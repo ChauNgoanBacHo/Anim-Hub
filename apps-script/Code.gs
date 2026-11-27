@@ -72,6 +72,12 @@ function replaceImageAtCell(context, a1, blob, title) {
   const range = sheet.getRange(a1);
   const row = range.getRow();
   const column = range.getColumn();
+  const compactWinPreview = column === 8 && sheet.getName().replace(/^\d+_/, '').toLowerCase() === 'bigwin-jpwin-totalwin';
+  // Remove previews previously uploaded to Output Images when migrating this layout.
+  if (compactWinPreview) {
+    (context.images[row + ':3'] || []).forEach(function(oldImage) { oldImage.remove(); });
+    context.images[row + ':3'] = [];
+  }
   const key = row + ':' + column;
   (context.images[key] || []).forEach(function(image) { image.remove(); });
   context.images[key] = [];
@@ -79,7 +85,7 @@ function replaceImageAtCell(context, a1, blob, title) {
   context.images[key] = [image];
   image.setAltTextTitle(title || 'Closure preview');
   const cellWidth = 300;
-  const cellHeight = Math.max(260, sheet.getRowHeight(row));
+
   const maxWidth = cellWidth - 24;
   const maxHeight = 220;
   const originalWidth = image.getWidth();
@@ -88,6 +94,7 @@ function replaceImageAtCell(context, a1, blob, title) {
   const width = Math.max(1, Math.round(originalWidth * scale));
   const height = Math.max(1, Math.round(originalHeight * scale));
   if (scale < 1) image.setWidth(width).setHeight(height);
+  const cellHeight = compactWinPreview ? height + 24 : Math.max(260, sheet.getRowHeight(row));
   if (!context.formattedColumns[column]) {
     sheet.setColumnWidth(column, cellWidth);
     context.formattedColumns[column] = true;

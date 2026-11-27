@@ -363,7 +363,7 @@ async function createCatalog(sheetUrl, catalog, operationId) {
   const layoutRequests = catalog.tabs.flatMap((tab) => {
     const sheetId = sheetIds.get(safeSheetTitle(tab.title));
     if (sheetId == null) return [];
-    const dataRowHeight = tab.source === "ui" && tab.title.replace(/^\d+_/, "").toLowerCase() === "bigwin-jpwin-totalwin" ? 244 : 260;
+    const dataRowHeight = 220;
     const rowCount = Math.max(2, tab.items.length + 1, (tab.views || []).length + 1);
     const columnCount = tab.source === "ui" ? 9 : 8;
     const statusIndex = tab.source === "ui" ? 6 : 5;
@@ -379,7 +379,7 @@ async function createCatalog(sheetUrl, catalog, operationId) {
       { repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: rowCount, startColumnIndex: statusIndex, endColumnIndex: statusIndex + 1 }, cell: { userEnteredFormat: { backgroundColor: { red: .74, green: .88, blue: .82 }, horizontalAlignment: "CENTER" } }, fields: "userEnteredFormat(backgroundColor,horizontalAlignment)" } },
       { updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 0, endIndex: 1 }, properties: { pixelSize: 38 }, fields: "pixelSize" } },
       { updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 1, endIndex: rowCount }, properties: { pixelSize: dataRowHeight }, fields: "pixelSize" } },
-      ...tab.items.flatMap((item,index) => item.description ? [{ updateDimensionProperties: { range:{ sheetId,dimension:"ROWS",startIndex:index + 1,endIndex:index + 2 }, properties:{ pixelSize: Math.max(260,Math.min(2000,item.description.split("\n").length * 19 + 24)) },fields:"pixelSize" } }] : []),
+      ...tab.items.flatMap((item,index) => item.description ? [{ updateDimensionProperties: { range:{ sheetId,dimension:"ROWS",startIndex:index + 1,endIndex:index + 2 }, properties:{ pixelSize: Math.max(dataRowHeight,Math.min(2000,item.description.split("\n").length * 19 + 24)) },fields:"pixelSize" } }] : []),
       { repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 3 }, cell: { userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE", wrapStrategy: "WRAP" } }, fields: "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment,wrapStrategy)" } },
       { repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: rowCount, startColumnIndex: 0, endColumnIndex: 1 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE" } }, fields: "userEnteredFormat(horizontalAlignment,verticalAlignment)" } },
       { repeatCell: { range: { sheetId, startRowIndex: 1, endRowIndex: rowCount, startColumnIndex: 1, endColumnIndex: 2 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", verticalAlignment: "MIDDLE", wrapStrategy: "WRAP" } }, fields: "userEnteredFormat(horizontalAlignment,verticalAlignment,wrapStrategy)" } },

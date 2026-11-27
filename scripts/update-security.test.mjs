@@ -75,7 +75,7 @@ test('Windows helper replaces portable directory and restores on immediate launc
    const target=path.join(dir,'Old app'),prepared=path.join(dir,'New app'),backup=path.join(dir,'Backup app');
    fs.mkdirSync(target);fs.mkdirSync(prepared);fs.writeFileSync(path.join(target,'version'),'old');fs.writeFileSync(path.join(prepared,'version'),'new');
    fs.writeFileSync(path.join(target,'launch.cmd'),'@exit /b 0');fs.writeFileSync(path.join(prepared,'launch.cmd'),'@exit /b 0');
-   const args=['-NoProfile','-NonInteractive','-File',path.resolve('assets/updater/install-win.ps1'),'-OldPid','2147483647','-Target',target,'-Prepared',prepared,'-Backup',backup,'-Log',path.join(dir,'log'),'-Executable',fail?'missing.exe':'launch.cmd','-Ready',path.join(dir,'ready')];
+   const args=['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.resolve('assets/updater/install-win.ps1'),'-OldPid','2147483647','-Target',target,'-Prepared',prepared,'-Backup',backup,'-Log',path.join(dir,'log'),'-Executable',fail?'missing.exe':'launch.cmd','-Ready',path.join(dir,'ready')];
    const ps=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
    if(fail) assert.throws(()=>execFileSync(ps,args,{stdio:'pipe'}));else execFileSync(ps,args,{stdio:'pipe'});
    assert.equal(fs.readFileSync(path.join(target,'version'),'utf8'),fail?'old':'new');

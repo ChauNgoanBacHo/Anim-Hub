@@ -159,11 +159,15 @@ async function install() {
     await fs.promises.chmod(helper,0o700);
     const ready = path.join(helperDir,'ready');
     const command = process.platform === 'darwin' ? '/bin/bash' : path.join(process.env.SystemRoot || 'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe');
-    const args = process.platform === 'darwin' ? [helper,String(process.pid),target,prepared,backup,log,ready,'/usr/bin/open'] : ['-NoProfile','-NonInteractive','-File',helper,'-OldPid',String(process.pid),'-Target',target,'-Prepared',prepared,'-Backup',backup,'-Log',log,'-Executable',`${EXECUTABLE_NAME}.exe`,'-Ready',ready];
-    const child = installHelper = spawn(command,args,{detached:true,stdio:'ignore',windowsHide:true,cwd:helperDir});
+    const args = process.platform === 'darwin' ? [helper,String(process.pid),target,prepared,backup,log,ready,'/usr/bin/open'] : ['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',helper,'-OldPid',String(process.pid),'-Target',target,'-Prepared',prepared,'-Backup',backup,'-Log',log,'-Executable',`${EXECUTABLE_NAME}.exe`,'-Ready',ready];
+    // Capture startup errors too: PowerShell may reject the script before its own logger runs.
+    const helperOutput = fs.openSync(log,'a');
+    let child;
+    try { child = installHelper = spawn(command,args,{detached:true,stdio:['ignore',helperOutput,helperOutput],windowsHide:true,cwd:helperDir}); }
+    finally { fs.closeSync(helperOutput); }
     await new Promise((resolve,reject) => {child.once('spawn',resolve);child.once('error',reject);});
     let helperError = null;
-    child.once('exit',code => { helperError = new Error(`Helper không khởi chạy được (${code}). Kiểm tra quyền chạy script/chính sách máy.`); });
+    child.once('exit',code => { helperError = new Error(`Helper không khởi chạy được (${code}). Chi tiết trong ${log}. Chính sách máy có thể chặn PowerShell.`); });
     const waitStart = Date.now();
     while (!fs.existsSync(ready)) {
       if (helperError) throw helperError;

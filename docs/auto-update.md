@@ -115,3 +115,5 @@ Bước kiểm tra package của app staged dùng `src/shared/update-package.mjs
 Lỗi khác với bước đọc metadata 1.0.4: Electron patched fs.open can thiệp khi WriteStream ghi file app.asar. Updater main dùng original-fs; extractUpdateZip nhận filesystem adapter và truyền fs vào WriteStream rõ ràng. Cả giải nén và đọc metadata đều dùng raw filesystem, không tắt integrity fuse.
 
 `npm run test:updater:electron` chạy regression trong Electron thật, giải nén ZIP chứa app.asar rồi đọc package. CI Windows/macOS chạy thêm test này ngoài unit tests Node. Đã tái hiện lỗi cũ và kiểm tra cách mới với ZIP 1.0.5 trong cache trên máy. Bản đang chạy 1.0.4 vẫn chứa lỗi ghi file, nên cần thay thủ công bằng bản sửa 1.0.6 một lần.
+
+Windows: helper PowerShell chạy với `-ExecutionPolicy Bypass` chỉ cho tiến trình cập nhật, không thay đổi policy hệ thống. Lỗi khởi chạy được ghi vào `update-result.txt`. App cũ vẫn dùng launcher cũ, nên cần thay bản portable thủ công một lần để nhận sửa lỗi launcher.

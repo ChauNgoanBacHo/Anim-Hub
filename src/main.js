@@ -13,6 +13,7 @@ import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
+import { parseBitmapFont } from "./shared/bitmap-font.mjs";
 import { registerAppUpdater } from "./appUpdater.js";
 import started from "electron-squirrel-startup";
 import { registerGoogleWorkspaceHandlers, scanDriveCatalog, attachDriveFolderLinks } from "./googleWorkspace.js";
@@ -551,6 +552,53 @@ async function validateScanFolder(folder, mode) {
 
 function registerIpcHandlers() {
   registerAppUpdater();
+  let bitmapFontCandidates = new Set();
+  ipcMain.handle("select-bitmap-font-folder", async () => {
+    try {
+      const chosen = await dialog.showOpenDialog({title:"Chọn folder BitmapFonts",properties:["openDirectory"]});
+      if(chosen.canceled || !chosen.filePaths[0]) return {cancelled:true};
+      const folder = await fs.promises.realpath(chosen.filePaths[0]);
+      const fonts=[];let count=0;
+      for await (const entry of await fs.promises.opendir(folder)) {
+        if(++count>10000) throw new Error("Folder quá lớn. Chọn riêng folder BitmapFonts nhé.");
+        if(entry.isFile() && /\.fnt$/i.test(entry.name)) fonts.push({name:entry.name,path:path.join(folder,entry.name)});
+        if(fonts.length>500) throw new Error("Folder có quá nhiều font (tối đa 500 file).");
+      }
+      if(!fonts.length) throw new Error("Không có file .fnt trong folder này. Chọn folder BitmapFonts chứa trực tiếp các font nhé.");
+      fonts.sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+      bitmapFontCandidates = new Set(fonts.map(font=>font.path));
+      return {ok:true,folder,fonts};
+    } catch(error) {return {ok:false,error:error.message};}
+  });
+  ipcMain.handle("load-bitmap-font", async (_event, selectedPath) => {
+    try {
+      let fontPath = selectedPath;
+      if(fontPath) {
+        if(!bitmapFontCandidates.has(fontPath)) throw new Error("Chọn font từ folder đã mở.");
+      } else {
+        const chosen = await dialog.showOpenDialog({title:"Chọn bitmap font",properties:["openFile"],filters:[{name:"Bitmap Font",extensions:["fnt"]}]});
+        if (chosen.canceled || !chosen.filePaths[0]) return {cancelled:true};
+        fontPath = chosen.filePaths[0];
+      }
+      if ((await fs.promises.stat(fontPath)).size > 4*1024*1024) throw new Error("File FNT quá lớn (tối đa 4 MB).");
+      const font = parseBitmapFont(await fs.promises.readFile(fontPath,"utf8"));
+      const folder = await fs.promises.realpath(path.dirname(fontPath));
+      let total=0;
+      for (const page of font.pages) {
+        if (path.isAbsolute(page.file) || page.file.includes("\\") || page.file.split("/").includes("..")) throw new Error("Đường dẫn texture không hợp lệ.");
+        const texture = await fs.promises.realpath(path.join(folder,page.file)).catch(()=>{throw new Error(`Không tìm thấy texture ${page.file}. Đặt PNG cùng folder với FNT.`);});
+        const relative=path.relative(folder,texture);
+        if(relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Texture phải nằm trong folder font.");
+        const extension=path.extname(texture).toLowerCase(),mime={".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",".webp":"image/webp"}[extension];
+        if(!mime) throw new Error("Texture cần là PNG, JPG hoặc WebP.");
+        const size=(await fs.promises.stat(texture)).size;
+        if(size>20*1024*1024 || (total+=size)>64*1024*1024) throw new Error("Texture quá lớn (tối đa 20 MB/file và 64 MB/font).");
+        page.dataUrl=`data:${mime};base64,${(await fs.promises.readFile(texture)).toString("base64")}`;
+      }
+      font.fileName=path.basename(fontPath);
+      return {ok:true,font};
+    } catch(error) {return {ok:false,error:error.message};}
+  });
   ipcMain.handle("scan-upload-gifs", async (_event, folder) => {
     try {
       await validateScanFolder(folder, "gif");

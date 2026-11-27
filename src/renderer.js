@@ -1,4 +1,5 @@
 import "./index.css";
+import { createFontLab } from "./fontLab.js";
 import mascotIcon from "../assets/icon-mascot-transparent.png";
 import mascotSuccess from "../assets/mascot-success-face.png";
 import mascotFail from "../assets/mascot-fail-face.png";
@@ -492,6 +493,8 @@ function workspaceSettings() {
   return `<section class="workspace-settings"><div class="sheet-link-field"><span>Closure Sheet URL</span>${state.module === "catalog" ? `<p class="sheet-workflow-hint">Đây là sheet gốc. Trước khi ghi data vào sheet, nên bấm <strong>Clear all data</strong>. Sau khi tạo sheet, bấm <strong>Make a copy</strong> để tạo một sheet mới dùng cho closure.</p>` : ""}${url ? `<a class="closure-sheet-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)} <b aria-hidden="true">↗</b></a>` : `<p>Closure Sheet chưa được cấu hình trong bản build</p>`}</div></section>`;
 }
 
+const fontLab = createFontLab({app,nav:appNav,esc,isActive:()=>state.module === "font"});
+
 function render() {
   document.body.dataset.module = state.module;
   const protectedFeatures = { catalog: "Tạo Sheet", upload: "Upload GIF", ownership: "Chuyển owner", notes: "Sổ tay animation" };
@@ -505,6 +508,7 @@ function render() {
   if (state.module === "naming") return renderNaming();
   if (state.module === "notes") return renderAnimationNotes();
   if (state.module === "ownership") return renderOwnership();
+  if (state.module === "font") return fontLab.render();
   return renderCatalog();
 }
 
@@ -516,8 +520,9 @@ function renderHome() {
     ["ownership", "04", "Chuyển owner", "Bàn giao Sheet và folder asset cho tài khoản quản lý."],
     ["naming", "05", "Cảnh sát chính tả", "Kiểm tra folder, file và animation name trước handoff."],
     ["notes", "06", "Sổ tay animation", "Ghi cách gọi animation để dev tra cứu và implement nhanh hơn."],
+    ["font", "07", "Phòng thử font", "Test bitmap font, ký tự tiền tệ, spacing và tràn khung."],
   ];
-app.innerHTML = `<main class="feature-home"><header><div class="app-logo"><img class="mascot-logo" src="${mascotIcon}" alt="Xóm Nhà Lá"><div><strong>Xóm Nhà Lá</strong><span>Bộ đồ nghề của cả xóm</span></div></div><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login để dùng Google Sheets" : "Build chưa có OAuth Client ID"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}${appUpdateControl()}</div></header><section class="feature-hero"><small>NHỎ MÀ CÓ VÕ</small><h1>Chuyện gì cũng có tool.</h1></section><section class="feature-columns">${[["Closure", "Tạo tài liệu và hoàn tất bàn giao", features.slice(0, 4)], ["Handoff", "Kiểm tra asset và hướng dẫn implement", features.slice(4)]].map(([group, subtitle, items]) => `<section class="feature-category"><div class="feature-category-title"><h2>${group}</h2><p>${subtitle}</p></div><div class="feature-grid">${items.map(([id, number, title, description]) => `<button data-do="switch-module" data-module="${id}"><span class="feature-number">${number}</span><i class="feature-symbol" aria-hidden="true">${({ catalog: "▦", export: "▶", upload: "↥", naming: "Aa", ownership: "⇄", notes: "≡" })[id]}</i><div><h2>${title}</h2><p>${description}</p></div></button>`).join("")}</div></section>`).join("")}</section><footer class="app-credit"><span>Powered by TiTi</span></footer></main>`;
+app.innerHTML = `<main class="feature-home"><header><div class="app-logo"><img class="mascot-logo" src="${mascotIcon}" alt="Xóm Nhà Lá"><div><strong>Xóm Nhà Lá</strong><span>Bộ đồ nghề của cả xóm</span></div></div><div class="feature-account">${state.google.signedIn ? `<div><strong>${esc(state.google.user?.name || "Google Workspace")}</strong><span>${esc(state.google.user?.email || "")}</span></div><button data-do="google-sign-out">Sign out</button>` : `<div><strong>Google Workspace</strong><span>${state.google.configured ? "Login để dùng Google Sheets" : "Build chưa có OAuth Client ID"}</span></div><button data-do="google-sign-in" ${!state.google.configured ? "disabled" : ""}>Login</button>`}${appUpdateControl()}</div></header><section class="feature-hero"><small>NHỎ MÀ CÓ VÕ</small><h1>Chuyện gì cũng có tool.</h1></section><section class="feature-columns">${[["Closure", "Tạo tài liệu và hoàn tất bàn giao", features.slice(0, 4)], ["Handoff", "Kiểm tra asset và hướng dẫn implement", features.slice(4)]].map(([group, subtitle, items]) => `<section class="feature-category"><div class="feature-category-title"><h2>${group}</h2><p>${subtitle}</p></div><div class="feature-grid">${items.map(([id, number, title, description]) => `<button data-do="switch-module" data-module="${id}"><span class="feature-number">${number}</span><i class="feature-symbol" aria-hidden="true">${({ catalog: "▦", export: "▶", upload: "↥", naming: "Aa", ownership: "⇄", notes: "≡", font: "₫" })[id]}</i><div><h2>${title}</h2><p>${description}</p></div></button>`).join("")}</div></section>`).join("")}</section><footer class="app-credit"><span>Powered by TiTi</span></footer></main>`;
 }
 
 function pageNotice() {

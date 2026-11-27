@@ -107,3 +107,11 @@ Section tạo/cập nhật game: Drive folder + Game ID → Scan. Quét JSON Spi
 Mỗi Spine là một button. Có note thì sáng; hover preview ghi chú chung và anim có note, một anim một dòng, ellipsis nếu dài. Popover được canh trong viewport. Click mở ngay form chung với các anim; tất cả field optional, Save riêng Spine, Cancel/Escape/click ngoài để đóng khi không lưu. Không autosave hay nút save tổng.
 
 Hướng dẫn hiện trên page: “Bạn có thể ghi chú các Spine đặc thù của game xuất hiện ở giao diện nào và khi nào. Các animation thông dụng có thể để trống.”
+
+## 7. Phòng thử font
+
+Feature offline trong nhóm Handoff, không cần Google login. Chọn riêng file FNT hoặc chọn cả folder BitmapFonts: app list FNT trực tiếp trong folder, tự load font đầu tiên và cho đổi font qua dropdown. Hỗ trợ FNT text/XML/JSON; app đọc các texture được khai báo trong cùng folder (hỗ trợ tối đa 16 page). Không hỗ trợ FNT binary hoặc packed-channel. Giữ texture gốc, không tint/đổi file source.
+
+Nhập nội dung bất kỳ hoặc chọn mẫu tiền tệ USD/VND/EUR/BRL/PHP/THB. Chỉnh cỡ chữ, spacing, chiều rộng khung và màu nền. Preview áp dụng offset, advance, kerning và glyph Unicode; đánh dấu ký tự thiếu bằng ô đỏ/mã Unicode, báo tràn ngang bằng px. Không tự co chữ để giấu lỗi tràn.
+
+Source: `src/fontLab.js` (UI/canvas), `src/shared/bitmap-font.mjs` (parser/layout), IPC `load-bitmap-font` trong main/preload. Metadata tối đa 4 MB, texture 20 MB/file và 64 MB/font, không đọc texture ngoài thư mục font. Test parser/layout: `node --test tests/bitmap-font.test.mjs`.

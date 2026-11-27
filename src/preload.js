@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('spinePreview', {
+  selectBitmapFontFolder: () => ipcRenderer.invoke('select-bitmap-font-folder'),
+  loadBitmapFont: (filePath) => ipcRenderer.invoke('load-bitmap-font', filePath),
   appUpdateState: () => ipcRenderer.invoke('app-update-state'),
   installAppUpdate: () => ipcRenderer.invoke('install-app-update'),
   onAppUpdateState: (callback) => {

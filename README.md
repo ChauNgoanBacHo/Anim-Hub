@@ -16,6 +16,7 @@ Landing chia hai nhóm, mỗi page có nút **Về Xóm**:
 | Closure | Chuyển owner, di chuyển Sheet | Có |
 | Handoff | Cảnh sát chính tả | Không |
 | Handoff | Sổ tay animation | Có |
+| Handoff | Phòng thử font | Không |
 
 Page cần đăng nhập chỉ hiện lời nhắc đăng nhập khi chưa có session. Giao diện dark, font Baloo 2, mascot và splash tối thiểu khoảng 2 giây.
 

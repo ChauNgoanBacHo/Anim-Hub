@@ -47,7 +47,7 @@ function base64Url(value) { return Buffer.from(value).toString("base64url"); }
 async function json(url, options = {}) {
   const response = await fetch(url, { ...options, signal: options.signal || AbortSignal.timeout(60000) });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body?.error?.message || body?.error_description || `Google API ${response.status}`);
+  if (!response.ok) throw new Error(`Google API ${response.status}: ${body?.error?.message || body?.error_description || response.statusText}`);
   return body;
 }
 async function accessToken() {
@@ -316,7 +316,10 @@ async function createCatalog(sheetUrl, catalog, operationId) {
   checkCatalogOperation(operationId);
   const spreadsheetId = idFrom(sheetUrl, "sheet");
   if (!spreadsheetId) throw new Error("Link Google Sheet không hợp lệ.");
+  let stage = "Đăng nhập Google";
+  try {
   const token = await accessToken();
+  stage = "Đọc danh sách tab";
   const metadata = await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`, { headers: { Authorization: `Bearer ${token}` } });
   const sheets = (metadata.sheets || []).map((sheet) => sheet.properties).sort((a, b) => a.index - b.index);
   const existing = new Set(sheets.map((sheet) => sheet.title));
@@ -336,12 +339,15 @@ async function createCatalog(sheetUrl, catalog, operationId) {
       existing.add(title);
     }
   }
+  stage = "Tạo tab";
   if (requests.length) await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ requests }) });
   checkCatalogOperation(operationId);
+  stage = "Tạo tab SOURCE";
   if (catalog.sourceFolderUrl) await createSourceTab(spreadsheetId, catalog.sourceFolderUrl, token);
   for (const tab of catalog.tabs) {
     checkCatalogOperation(operationId);
     const title = safeSheetTitle(tab.title);
+    stage = `Xoá dữ liệu cũ tab ${title}`;
     await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`${quoted(title)}!A:I`)}:clear`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}" });
     const isUi = tab.source === "ui";
     const columns = ["No", "Type", "Output Images", "Folder", "File Name", ...(isUi ? ["Dimensions"] : []), "Status", "Description/Note", "Demo"];
@@ -356,8 +362,10 @@ async function createCatalog(sheetUrl, catalog, operationId) {
       return [index + 1, isUi ? item.type || "Static" : "Spine", "", item.driveFolderUrl ? item.driveFolderName || item.group || tab.sourceName : "", fileNames, ...(isUi ? [dimensions] : []), "DONE", isUi ? "" : item.description || "", ""];
     })];
     while (isUi && values.length < (tab.views || []).length + 1) values.push(Array(columns.length).fill(""));
+    stage = `Ghi dữ liệu tab ${title}`;
     await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`${quoted(title)}!A1`)}?valueInputOption=RAW`, { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ values }) });
   }
+  stage = "Đọc lại danh sách tab";
   const refreshed = await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties`, { headers: { Authorization: `Bearer ${token}` } });
   const sheetIds = new Map((refreshed.sheets || []).map((sheet) => [sheet.properties.title, sheet.properties.sheetId]));
   const layoutRequests = catalog.tabs.flatMap((tab) => {
@@ -388,12 +396,14 @@ async function createCatalog(sheetUrl, catalog, operationId) {
     ];
   });
   checkCatalogOperation(operationId);
+  stage = `Định dạng các tab: ${desiredTitles.join(", ")}`;
   if (layoutRequests.length) {
     await json(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ requests: layoutRequests }) });
   }
   checkCatalogOperation(operationId);
 
   return { spreadsheetId, tabs: catalog.tabs.length, sourceCreated: Boolean(catalog.sourceFolderUrl) };
+  } catch (error) { throw new Error(`${stage}: ${error.message || String(error)}`); }
 }
 async function loadSheet(sheetUrl, tabTitle = "") {
   const spreadsheetId = idFrom(sheetUrl, "sheet");

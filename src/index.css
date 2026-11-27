@@ -1503,8 +1503,8 @@ body[data-module="ownership"] .owner-move-section .module-actions { margin:0; ju
 @media (max-width:680px) { .feature-account { flex-wrap:wrap; justify-content:flex-end; } .feature-account .app-update-control { padding-left:10px; gap:8px; } }
 
 /* Bitmap font lab */
-.feature-columns .feature-grid > button[data-module="font"] { background:#2d2936; --card-accent:#d0c0ef; }
-.feature-columns .feature-grid > button[data-module="font"]:hover { background:#342f40; border-color:#a490c7; }
+.feature-columns .feature-grid > button[data-module="font"] { background:#302e20; --card-accent:#e2d18e; }
+.feature-columns .feature-grid > button[data-module="font"]:hover { background:#3b3725; border-color:#bfa85e; }
 .font-lab .font-lab-info { display:flex; flex-direction:column; gap:6px; padding:18px 22px; }
 .font-lab-info strong { font-size:20px; color:#eef1f7; }
 .font-lab-info > span { color:#aeb8c8; font-size:15px; }

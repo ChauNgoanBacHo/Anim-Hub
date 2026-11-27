@@ -1,5 +1,5 @@
 import {layoutBitmapText} from './shared/bitmap-font.mjs';
-const samples = ['123,456,789.00','$ 123,456,789.00','₫ 123,456,789.00','€ 123,456,789.00','R$ 123,456,789.00','₱ 123,456,789.00','฿ 123,456,789.00'];
+const samples = ['123,456,789.00','$123,456,789.00','₫123,456,789.00','€123,456,789.00','R$123,456,789.00','₱123,456,789.00','฿123,456,789.00'];
 export function createFontLab({app,nav,esc,isActive}) {
   const state={font:null,images:new Map(),fonts:[],folder:'',selectedPath:'',text:'123,456,789.00',size:32,spacing:0,width:640,background:'#202226',busy:false,error:''};
   function render() {
